@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>合奏計画ポータル | スプコン2027</title>
+    <title>合奏計画ポータル</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -12,7 +12,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
-    <!-- パスワード認証モーダル -->
+    <!-- 認証モーダル -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
@@ -21,13 +21,13 @@
             <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
             <p class="text-sm text-slate-500 mb-6">IDとパスワードを入力してください。</p>
             <form onsubmit="checkPassword(event)" class="space-y-4">
-                <input type="text" id="id-input" placeholder="IDを入力" 
-                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base" style="--tw-ring-color: #23651C;">
-                <input type="password" id="password-input" placeholder="パスワードを入力" 
-                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base tracking-widest" style="--tw-ring-color: #23651C;">
+                <input type="text" id="id-input" placeholder="ID" 
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base" style="--tw-ring-color: #23651C;" required>
+                <input type="password" id="password-input" placeholder="パスワード" 
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base tracking-widest" style="--tw-ring-color: #23651C;" required>
                 <button type="submit" 
                     class="w-full text-white font-medium py-3 rounded-xl transition shadow-sm cursor-pointer hover:opacity-90" style="background-color: #23651C;">
-                    入室する
+                    ログイン
                 </button>
             </form>
             <p id="error-msg" class="text-xs text-rose-500 mt-3 hidden">IDまたはパスワードが正しくありません</p>
@@ -38,32 +38,25 @@
     <div id="main-content" class="hidden flex-1 flex flex-col">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <h1 class="text-lg font-bold" style="color: #23651C;">スプコン2027 合奏計画</h1>
-                </div>
+                <h1 class="text-lg font-bold" style="color: #23651C;">合奏計画ポータル</h1>
             </div>
         </header>
 
         <main class="max-w-4xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
-            
-            <!-- 上部切り替えタブ（日付別 / 曲別） -->
             <div class="space-y-3">
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">練習日を選択</span>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">練習日</span>
                     <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
                 </div>
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">曲名で絞り込み</span>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">曲名</span>
                     <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
                 </div>
             </div>
 
-            <!-- 見出し表示 -->
             <div id="current-view-title" class="text-lg font-bold text-slate-800 border-b border-slate-200 pb-2"></div>
 
-            <!-- 合奏計画カード一覧 -->
             <div id="plan-container" class="space-y-4"></div>
-
         </main>
 
         <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400">
@@ -77,15 +70,13 @@
         let activeMode = 'date'; 
         let selectedTarget = '';
 
-        // スプレッドシートの時刻データを「HH:mm」形式に綺麗に変換する関数
         function formatTime(val) {
             if (!val) return "";
             const str = String(val).trim();
-            // ISO形式や日付つき文字列（例: 1899-12-30T09:00:00.000Z）の場合
             if (str.includes("T")) {
                 const parts = str.split("T");
                 if (parts.length > 1) {
-                    const timePart = parts[1].split(".")[0]; // 09:00:00
+                    const timePart = parts[1].split(".")[0];
                     const timeSub = timePart.split(":");
                     if (timeSub.length >= 2) {
                         return `${timeSub[0]}:${timeSub[1]}`;
@@ -95,49 +86,58 @@
             return str;
         }
 
+        async function loadServerData() {
+            if (serverData) return true;
+            try {
+                const response = await fetch(GAS_API_URL);
+                serverData = await response.json();
+                return true;
+            } catch (e) {
+                console.error("データ取得失敗", e);
+                return false;
+            }
+        }
+
         async function checkPassword(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
             const inputPass = document.getElementById('password-input').value.trim();
             const errorMsg = document.getElementById('error-msg');
+            errorMsg.classList.add('hidden');
 
-            try {
-                if (!serverData) {
-                    const response = await fetch(GAS_API_URL);
-                    serverData = await response.json();
-                }
+            const loaded = await loadServerData();
+            if (!loaded) {
+                errorMsg.innerText = "通信エラー";
+                errorMsg.classList.remove('hidden');
+                return;
+            }
 
-                if (inputId === serverData.auth.id && inputPass === serverData.auth.pass) {
-                    document.getElementById('auth-modal').classList.add('hidden');
-                    document.getElementById('main-content').classList.remove('hidden');
-                    sessionStorage.setItem('auth_passed', 'true');
-                    initApp();
-                } else {
-                    errorMsg.classList.remove('hidden');
-                }
-            } catch (e) {
-                console.error("認証エラー", e);
-                errorMsg.innerText = "サーバーとの通信に失敗しました";
+            if (inputId === serverData.auth.id && inputPass === serverData.auth.pass) {
+                sessionStorage.setItem('auth_passed', 'true');
+                showMainContent();
+            } else {
+                errorMsg.innerText = "IDまたはパスワードが正しくありません";
                 errorMsg.classList.remove('hidden');
             }
         }
 
+        function showMainContent() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            initApp();
+        }
+
         window.onload = async function() {
             if (sessionStorage.getItem('auth_passed') === 'true') {
-                try {
-                    const response = await fetch(GAS_API_URL);
-                    serverData = await response.json();
-                    document.getElementById('auth-modal').classList.add('hidden');
-                    document.getElementById('main-content').classList.remove('hidden');
-                    initApp();
-                } catch (e) {
-                    console.error("データ読み込み失敗", e);
+                const loaded = await loadServerData();
+                if (loaded) {
+                    showMainContent();
                 }
             }
         }
 
         function initApp() {
-            if (!serverData || serverData.plans.length === 0) return;
+            if (!serverData || !serverData.plans || serverData.plans.length === 0) return;
             renderTabs();
             selectDateTab(serverData.plans[0].date);
         }
@@ -199,18 +199,7 @@
             activeMode = 'date';
             selectedTarget = date;
             renderTabs();
-            document.getElementById('current-view-titleinnerText'] = '';
-            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
-
-            const targetSheet = serverData.plans.find(d => d.date === date);
-            renderCards(parseRows(targetSheet ? targetSheet.rows : [], 'date'));
-        }
-
-        function selectSongTab(songName) {
-            activeMode = 'song';
-            selectedTarget = songName;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定一覧`;
+            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;  const targetSheet = serverData.plans.find(d => d.date === date); renderCards(parseRows(targetSheet ? targetSheet.rows : [])); }  function selectSongTab(songName) { activeMode = 'song'; selectedTarget = songName; renderTabs(); document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
 
             let matchedRows = [];
             serverData.plans.forEach(plan => {
@@ -232,7 +221,7 @@
             renderCards(matchedRows, 'song');
         }
 
-        function parseRows(rows, mode) {
+        function parseRows(rows) {
             let parsed = [];
             for (let i = 2; i < rows.length; i++) {
                 const row = rows[i];
@@ -264,93 +253,4 @@
             container.innerHTML = '';
 
             if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">現在掲載されている予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const planData = mode === 'song' ? item.row : item;
-                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">練習日: ${item.date}</span>` : '';
-
-                const 枠 = planData[0] || planData.枠 || "";
-                const 曲名 = planData[1] || planData.曲名 || "";
-                const 開始 = formatTime(planData[2] || planData.開始);
-                const 終了 = formatTime(planData[3] || planData.終了);
-                const 時間 = planData[4] || planData.時間 || "";
-                const 一言目標 = planData[5] || planData.一言目標 || "";
-                const 振り返り = planData[6] || planData.振り返り || "";
-                const 取組箇所 = planData[7] || planData.取組箇所 || "";
-                const 次回向け = planData[8] || planData.次回向け || "";
-                const 備考 = planData[9] || planData.備考 || "";
-
-                const cardId = `card-${index}`;
-
-                const cardHtml = `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
-                                    ${dateLabel}
-                                </div>
-                                <h3 class="text-xl font-bold text-slate-900">${曲名}</h3>
-                            </div>
-
-                            <div class="text-sm text-slate-500 mb-4 font-medium">
-                                合奏時間：<span class="text-slate-800">${開始} 〜 ${終了} ${時間 ? `(${时间分表記(時間)})` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">① 一言目標</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${一言目標 || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">② 合奏で取り組む箇所</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">③ 前回合奏の振り返り</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${振り返り || "（なし）"}</p>
-                                </div>
-                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs text-slate-400 pt-2 gap-1">
-                                    <span>④ 次回に向けて: ${次回向け || "-"}</span>
-                                    <span>⑤ 備考: ${備考 || "-"}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('beforeend', cardHtml);
-            });
-        }
-
-        function 時間分表記(val) {
-            const str = String(val).trim();
-            if (str.includes("T")) {
-                // 万が一時間カラムも日付シリアルになっている場合の対策
-                return "時間";
-            }
-            return `${str}分`;
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            if (content.classList.contains('hidden')) {
-                content.classList.remove('hidden');
-                icon.innerText = "▲";
-            } else {
-                content.classList.add('hidden');
-                icon.innerText = "▼";
-            }
-        }
-    </script>
-</body>
-</html>
+                container.innerHTML = `<p class="text-sm text-slate-
