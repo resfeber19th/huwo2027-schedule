@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HUWO2027スプコン　合奏計画</title>
+    <title>スプコン2027 合奏計画</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -46,7 +46,7 @@
     <div id="main-content" class="flex-1 flex-col" style="display:none;">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-                <h1 class="text-lg font-bold" style="color: #23651C;">HUWO2027スプコン　合奏計画</h1>
+                <h1 class="text-lg font-bold" style="color: #23651C;">スプコン2027　合奏計画</h1>
                 <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
             </div>
         </header>
@@ -69,7 +69,7 @@
         </main>
 
         <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400">
-            <p>&copy; HUWO2027年度　技術局</p>
+            <p>&copy;HUWO技術局</p>
         </footer>
     </div>
 
@@ -383,9 +383,9 @@
                             <div id="${cardId}-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
                                 ${detailBlock('① 一言目標', item.一言目標, '（未設定）')}
                                 ${detailBlock('② 取組箇所', item.取組箇所, '（未設定）')}
-                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（なし）')}
+                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（未設定）')}
                                 ${detailBlock('④ 次回に向けて', item.次回向け, '（未設定）')}
-                                ${detailBlock('⑤ 備考', item.備考, '（なし）')}
+                                ${detailBlock('⑤ 備考', item.備考, '（未設定）')}
                             </div>
                         </div>
                     </div>
