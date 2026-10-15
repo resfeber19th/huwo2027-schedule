@@ -85,4 +85,223 @@
         /* ---------- ユーティリティ ---------- */
 
         const store = {
-            get(k) { try { return sessionStorage.getItem
+            get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
+            set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} },
+            remove(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+        };
+
+        function escapeHtml(val) {
+            return String(val ?? '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function show(id, display = 'block') { document.getElementById(id).style.display = display; }
+        function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+        function showError(msg) {
+            const el = document.getElementById('error-msg');
+            el.innerText = msg;
+            el.style.display = 'block';
+        }
+        function clearError() { hide('error-msg'); }
+
+        function formatTime(val) {
+            if (!val) return "";
+            const str = String(val).trim();
+            if (str.includes("T")) {
+                const parts = str.split("T");
+                if (parts.length > 1) {
+                    const timePart = parts[1].split(".")[0];
+                    const timeSub = timePart.split(":");
+                    if (timeSub.length >= 2) return `${timeSub[0]}:${timeSub[1]}`;
+                }
+            }
+            return str;
+        }
+
+        // 開始・終了の時刻文字列から「何分間か」を自動計算する
+        function formatMinutes(startTimeStr, endTimeStr) {
+            if (!startTimeStr || !endTimeStr) return "";
+            try {
+                const parseTime = (str) => {
+                    const cleanStr = String(str).trim();
+                    const match = cleanStr.match(/(\d{1,2}):(\d{2})/);
+                    if (match) {
+                        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+                    }
+                    return null;
+                };
+
+                const startMin = parseTime(startTimeStr);
+                const endMin = parseTime(endTimeStr);
+
+                if (startMin !== null && endMin !== null) {
+                    let diff = endMin - startMin;
+                    if (diff < 0) diff += 24 * 60;
+                    return `${diff}`;
+                }
+            } catch (e) {
+                console.error("Minute calculation error:", e);
+            }
+            return "";
+        }
+
+        async function fetchServerData() {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+            try {
+                const res = await fetch(GAS_API_URL, { signal: ctrl.signal });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (!data || !data.auth || !Array.isArray(data.plans)) {
+                    throw new Error('INVALID_STRUCTURE');
+                }
+                return data;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        /* ---------- ログイン / ログアウト ---------- */
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const inputId = document.getElementById('id-input').value.trim();
+            const inputPass = document.getElementById('password-input').value.trim();
+            const btn = document.getElementById('login-btn');
+            clearError();
+            btn.disabled = true;
+            btn.innerText = '確認中…';
+
+            let data;
+            try {
+                data = await fetchServerData();
+            } catch (e) {
+                console.error(e);
+                showError(e.message === 'INVALID_STRUCTURE'
+                    ? 'サーバーからのデータ構造が不正です'
+                    : '通信エラーが発生しました（時間をおいて再度お試しください）');
+                btn.disabled = false;
+                btn.innerText = 'ログイン';
+                return;
+            }
+
+            btn.disabled = false;
+            btn.innerText = 'ログイン';
+
+            if (inputId === String(data.auth.id).trim() && inputPass === String(data.auth.pass).trim()) {
+                store.set(SESSION_KEY, 'true');
+                enterApp(data);
+            } else {
+                showError('IDまたはパスワードが正しくありません');
+            }
+        }
+
+        function handleLogout() {
+            store.remove(SESSION_KEY);
+            window.location.reload();
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            if (store.get(SESSION_KEY) !== 'true') return;
+
+            hide('login-box');
+            show('loading-box');
+            try {
+                const data = await fetchServerData();
+                enterApp(data);
+            } catch (e) {
+                console.error('Auto-login failed:', e);
+                store.remove(SESSION_KEY);
+                hide('loading-box');
+                show('login-box');
+                showError('自動ログインに失敗しました。もう一度ログインしてください');
+            }
+        });
+
+        function enterApp(data) {
+            hide('auth-modal');
+            show('main-content', 'flex');
+            try {
+                initApp(data);
+            } catch (e) {
+                console.error('Render error:', e);
+                document.getElementById('plan-container').innerHTML =
+                    `<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。再読み込みしてください。</p>`;
+            }
+        }
+
+        /* ---------- 初期化・タブ ---------- */
+
+        function initApp(data) {
+            plans = (data.plans || []).filter(p => p && p.date && !String(p.date).includes("ひながた"));
+
+            if (plans.length === 0) {
+                document.getElementById('plan-container').innerHTML =
+                    `<p class="text-sm text-slate-400 text-center py-8">有効な練習日シートが見つかりません</p>`;
+                return;
+            }
+            selectDateTab(String(plans[0].date));
+        }
+
+        function normalizeRow(row) {
+            if (!Array.isArray(row)) return null;
+            const 開始 = formatTime(row[2]);
+            const 終了 = formatTime(row[3]);
+            const 曲名 = row[1] ? String(row[1]).trim() : "";
+            if (開始 === "" || 終了 === "" || 曲名 === "") return null;
+            return {
+                枠: row[0] || "",
+                曲名,
+                開始,
+                終了,
+                時間: formatMinutes(row[2], row[3]), // 開始・終了から自動計算（修正済）
+                一言目標: row[5] || "",
+                振り返り: row[6] || "",
+                取組箇所: row[7] || "",
+                次回向け: row[8] || "",
+                備考: row[9] || ""
+            };
+        }
+
+        function getAllSongs() {
+            const songs = new Set();
+            plans.forEach(plan => {
+                (plan.rows || []).slice(2).forEach(row => {
+                    const n = normalizeRow(row);
+                    if (n) songs.add(n.曲名);
+                });
+            });
+            return Array.from(songs);
+        }
+
+        function makeTabButton(label, isActive, onClick) {
+            const btn = document.createElement('button');
+            btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer';
+            if (isActive) {
+                btn.className += ' text-white shadow-sm';
+                btn.style.backgroundColor = '#23651C';
+            } else {
+                btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+            }
+            btn.innerText = label;
+            btn.onclick = onClick;
+            return btn;
+        }
+
+        function renderTabs() {
+            const dateContainer = document.getElementById('date-tabs');
+            dateContainer.innerHTML = '';
+            plans.forEach(item => {
+                const d = String(item.date);
+                dateContainer.appendChild(
+                    makeTabButton(d, activeMode === 'date' && selectedTarget === d, () => selectDateTab(d))
+                );
+            });
+
+            const songContainer = document.getElementById('song-tabs');
+            songContainer.innerHTML = '';
+            getAllSongs().forEach(song => {
+                songContainer.appendChild(
+                    makeTabButton(song, activeMode
