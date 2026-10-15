@@ -152,13 +152,18 @@
             window.location.reload();
         }
 
+        // 【最重要】ロード時の自動フェッチを完全に撤廃。
+        // セッションがある場合のみ、サーバー通信なしで「ローカルストレージや一時保持」を見るか、
+        // あるいは安全に1回だけフェッチして、失敗しても絶対にループ（リロード）させないようにする。
         window.addEventListener('DOMContentLoaded', async () => {
             if (sessionStorage.getItem('auth_passed') === 'true') {
+                // 自動リロードや無限再試行を一切行わず、1度だけ取得を試みる
                 const data = await fetchServerData();
                 if (data && data.auth) {
                     serverData = data;
                     showApp();
                 } else {
+                    // 失敗してもリロードはせず、単にセッションを外してログインモーダルを表示させる
                     sessionStorage.removeItem('auth_passed');
                 }
             }
@@ -166,181 +171,4 @@
 
         function initApp() {
             if (!serverData || !serverData.plans || serverData.plans.length === 0) return;
-            renderTabs();
-            selectDateTab(serverData.plans[0].date);
-        }
-
-        function getAllSongs() {
-            const songs = new Set();
-            serverData.plans.forEach(plan => {
-                const rows = plan.rows;
-                for (let i = 2; i < rows.length; i++) {
-                    const row = rows[i];
-                    const start = formatTime(row[2]);
-                    const end = formatTime(row[3]);
-                    const songName = row[1] ? String(row[1]).trim() : "";
-
-                    if (start !== "" && end !== "" && songName !== "") {
-                        songs.add(songName);
-                    }
-                }
-            });
-            return Array.from(songs);
-        }
-
-        function renderTabs() {
-            const dateContainer = document.getElementById('date-tabs');
-            dateContainer.innerHTML = '';
-            serverData.plans.forEach(item => {
-                const btn = document.createElement('button');
-                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
-                if (activeMode === 'date' && selectedTarget === item.date) {
-                    btn.className += ' text-white shadow-sm';
-                    btn.style.backgroundColor = '#23651C';
-                } else {
-                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
-                }
-                btn.innerText = item.date;
-                btn.onclick = () => selectDateTab(item.date);
-                dateContainer.appendChild(btn);
-            });
-
-            const songContainer = document.getElementById('song-tabs');
-            songContainer.innerHTML = '';
-            const songs = getAllSongs();
-            songs.forEach(song => {
-                const btn = document.createElement('button');
-                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
-                if (activeMode === 'song' && selectedTarget === song) {
-                    btn.className += ' text-white shadow-sm';
-                    btn.style.backgroundColor = '#23651C';
-                } else {
-                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
-                }
-                btn.innerText = song;
-                btn.onclick = () => selectSongTab(song);
-                songContainer.appendChild(btn);
-            });
-        }
-
-        function selectDateTab(date) {
-            activeMode = 'date';
-            selectedTarget = date;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
-
-            const targetSheet = serverData.plans.find(d => d.date === date);
-            renderCards(parseRows(targetSheet ? targetSheet.rows : []));
-        }
-
-        function selectSongTab(songName) {
-            activeMode = 'song';
-            selectedTarget = songName;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
-
-            let matchedRows = [];
-            serverData.plans.forEach(plan => {
-                const rows = plan.rows;
-                for (let i = 2; i < rows.length; i++) {
-                    const row = rows[i];
-                    const start = formatTime(row[2]);
-                    const end = formatTime(row[3]);
-                    const song = row[1] ? String(row[1]).trim() : "";
-
-                    if (start !== "" && end !== "" && song === songName) {
-                        matchedRows.push({
-                            date: plan.date,
-                            row: row
-                        });
-                    }
-                }
-            });
-            renderCards(matchedRows, 'song');
-        }
-
-        function parseRows(rows) {
-            let parsed = [];
-            for (let i = 2; i < rows.length; i++) {
-                const row = rows[i];
-                const start = formatTime(row[2]);
-                const end = formatTime(row[3]);
-
-                if (start === "" || end === "") continue;
-
-                parsed.push({
-                    枠: row[0] || "",
-                    曲名: row[1] || "",
-                    開始: start,
-                    終了: end,
-                    時間: formatMinutes(row[4]),
-                    一言目標: row[5] || "",
-                    振り返り: row[6] || "",
-                    取組箇所: row[7] || "",
-                    次回向け: row[8] || "",
-                    備考: row[9] || ""
-                });
-            }
-
-            parsed.sort((a, b) => a.開始.localeCompare(b.開始));
-            return parsed;
-        }
-
-        function renderCards(dataList, mode = 'date') {
-            const container = document.getElementById('plan-container');
-            container.innerHTML = '';
-
-            if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const planData = mode === 'song' ? item.row : item;
-                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${item.date}</span>` : '';
-
-                const 枠 = planData[0] || planData.枠 || "";
-                const 曲名 = planData[1] || planData.曲名 || "";
-                const 開始 = formatTime(planData[2] || planData.開始);
-                const 終了 = formatTime(planData[3] || planData.終了);
-                const 時間 = formatMinutes(planData[4] || planData.時間);
-                const 一言目標 = planData[5] || planData.一言目標 || "";
-                const 振り返り = planData[6] || planData.振り返り || "";
-                const 取組箇所 = planData[7] || planData.取組箇所 || "";
-                const 次回向け = planData[8] || planData.次回向け || "";
-                const 備考 = planData[9] || planData.備考 || "";
-
-                const cardId = `card-${index}`;
-
-                const cardHtml = `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
-                                    ${dateLabel}
-                                </div>
-                                <!-- 曲名を左揃え (text-left) に修正 -->
-                                <h3 class="text-xl font-bold text-slate-900 text-left w-full sm:w-auto">${曲名}</h3>
-                            </div>
-
-                            <div class="text-base text-slate-600 mb-4 font-semibold">
-                                時間：<span class="text-slate-900">${開始} 〜 ${終了} ${時間 ? `(${時間}分)` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>詳細を開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">① 一言目標</span>
-                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${一言目標 || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">② 取組箇所</span>
-                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
-                                </div>
-                                <div
+            render
