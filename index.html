@@ -12,6 +12,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
+    <!-- 認証モーダル -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
@@ -33,10 +34,12 @@
         </div>
     </div>
 
+    <!-- メインコンテンツ -->
     <div id="main-content" class="hidden flex-1 flex flex-col">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
                 <h1 class="text-lg font-bold" style="color: #23651C;">合奏計画ポータル</h1>
+                <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
             </div>
         </header>
 
@@ -103,6 +106,7 @@
             return match ? match[0] : str;
         }
 
+        // データ取得（1回だけ確実に取得）
         async function fetchServerData() {
             if (serverData) return true;
             try {
@@ -110,6 +114,7 @@
                 serverData = await response.json();
                 return true;
             } catch (e) {
+                console.error(e);
                 return false;
             }
         }
@@ -120,6 +125,7 @@
             initApp();
         }
 
+        // ログイン処理
         async function handleLogin(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
@@ -129,7 +135,7 @@
 
             const success = await fetchServerData();
             if (!success || !serverData || !serverData.auth) {
-                errorMsg.innerText = "通信エラー";
+                errorMsg.innerText = "通信エラーが発生しました";
                 errorMsg.classList.remove('hidden');
                 return;
             }
@@ -143,13 +149,21 @@
             }
         }
 
+        // ログアウト処理
+        function handleLogout() {
+            sessionStorage.removeItem('auth_passed');
+            window.location.reload();
+        }
+
+        // ページ読み込み時：認証済みならバックグラウンドでデータを取得して即表示（ループ完全排除）
         window.addEventListener('DOMContentLoaded', async () => {
             if (sessionStorage.getItem('auth_passed') === 'true') {
                 const success = await fetchServerData();
                 if (success && serverData && serverData.auth) {
                     showApp();
                 } else {
-                    sessionStorage.removeItem('auth_passed');
+                    // 通信失敗時はセッションを消さずにモーダルを表示（勝手にリロードさせない）
+                    document.getElementById('auth-modal').classList.remove('hidden');
                 }
             }
         });
@@ -272,19 +286,4 @@
                 });
             }
 
-            parsed.sort((a, b) => a.開始.localeCompare(b.開始));
-            return parsed;
-        }
-
-        function renderCards(dataList, mode = 'date') {
-            const container = document.getElementById('plan-container');
-            container.innerHTML = '';
-
-            if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const planData = mode === 'song' ? item.row : item;
-                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651
+            parsed.
