@@ -66,7 +66,8 @@
     </div>
 
     <script>
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyFD0aVWBLQ41cBQnKuhbdtfNe2wcxcY2PMR8uSRNXHK9Hh5hv4Y0JVYMDxwWDOB82-/exec";
+        // 新しいGASのAPIエンドポイント
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzwM3nhqUOldRg4efiMYzDOVu1SKvs7uyzMEKRLw42BaTJq_G96rWjtifQpdcewJuS4/exec";
         let serverData = null;
         let activeMode = 'date'; 
         let selectedTarget = '';
@@ -97,4 +98,287 @@
                         const m = d.getMinutes();
                         const h = d.getHours();
                         const totalMin = (h * 60) + m;
-                        if
+                        if (totalMin > 0) return `${totalMin}`;
+                    }
+                } catch (e) {}
+                return "";
+            }
+            const match = str.match(/\d+/);
+            return match ? match[0] : str;
+        }
+
+        // サーバからデータを取得
+        async function fetchServerData() {
+            try {
+                const response = await fetch(GAS_API_URL);
+                const data = await response.json();
+                return data;
+            } catch (e) {
+                console.error("通信エラー:", e);
+                return null;
+            }
+        }
+
+        // アプリ画面を表示
+        function showApp() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            initApp();
+        }
+
+        // ログインボタンを押したときの処理
+        async function handleLogin(event) {
+            event.preventDefault();
+            const inputId = document.getElementById('id-input').value.trim();
+            const inputPass = document.getElementById('password-input').value.trim();
+            const errorMsg = document.getElementById('error-msg');
+            errorMsg.classList.add('hidden');
+
+            const data = await fetchServerData();
+            if (!data || !data.auth) {
+                errorMsg.innerText = "通信エラーが発生しました";
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            if (inputId === data.auth.id && inputPass === data.auth.pass) {
+                serverData = data;
+                sessionStorage.setItem('auth_passed', 'true');
+                showApp();
+            } else {
+                errorMsg.innerText = "IDまたはパスワードが正しくありません";
+                errorMsg.classList.remove('hidden');
+            }
+        }
+
+        // ログアウト処理
+        function handleLogout() {
+            sessionStorage.removeItem('auth_passed');
+            window.location.reload();
+        }
+
+        // ページロード時の初期チェック
+        window.addEventListener('DOMContentLoaded', async () => {
+            if (sessionStorage.getItem('auth_passed') === 'true') {
+                const data = await fetchServerData();
+                if (data && data.auth) {
+                    serverData = data;
+                    showApp();
+                } else {
+                    sessionStorage.removeItem('auth_passed');
+                }
+            }
+        });
+
+        function initApp() {
+            if (!serverData || !serverData.plans || serverData.plans.length === 0) return;
+            renderTabs();
+            selectDateTab(serverData.plans[0].date);
+        }
+
+        function getAllSongs() {
+            const songs = new Set();
+            serverData.plans.forEach(plan => {
+                const rows = plan.rows;
+                for (let i = 2; i < rows.length; i++) {
+                    const row = rows[i];
+                    const start = formatTime(row[2]);
+                    const end = formatTime(row[3]);
+                    const songName = row[1] ? String(row[1]).trim() : "";
+
+                    if (start !== "" && end !== "" && songName !== "") {
+                        songs.add(songName);
+                    }
+                }
+            });
+            return Array.from(songs);
+        }
+
+        function renderTabs() {
+            const dateContainer = document.getElementById('date-tabs');
+            dateContainer.innerHTML = '';
+            serverData.plans.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
+                if (activeMode === 'date' && selectedTarget === item.date) {
+                    btn.className += ' text-white shadow-sm';
+                    btn.style.backgroundColor = '#23651C';
+                } else {
+                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+                }
+                btn.innerText = item.date;
+                btn.onclick = () => selectDateTab(item.date);
+                dateContainer.appendChild(btn);
+            });
+
+            const songContainer = document.getElementById('song-tabs');
+            songContainer.innerHTML = '';
+            const songs = getAllSongs();
+            songs.forEach(song => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
+                if (activeMode === 'song' && selectedTarget === song) {
+                    btn.className += ' text-white shadow-sm';
+                    btn.style.backgroundColor = '#23651C';
+                } else {
+                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+                }
+                btn.innerText = song;
+                btn.onclick = () => selectSongTab(song);
+                songContainer.appendChild(btn);
+            });
+        }
+
+        function selectDateTab(date) {
+            activeMode = 'date';
+            selectedTarget = date;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
+
+            const targetSheet = serverData.plans.find(d => d.date === date);
+            renderCards(parseRows(targetSheet ? targetSheet.rows : []));
+        }
+
+        function selectSongTab(songName) {
+            activeMode = 'song';
+            selectedTarget = songName;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
+
+            let matchedRows = [];
+            serverData.plans.forEach(plan => {
+                const rows = plan.rows;
+                for (let i = 2; i < rows.length; i++) {
+                    const row = rows[i];
+                    const start = formatTime(row[2]);
+                    const end = formatTime(row[3]);
+                    const song = row[1] ? String(row[1]).trim() : "";
+
+                    if (start !== "" && end !== "" && song === songName) {
+                        matchedRows.push({
+                            date: plan.date,
+                            row: row
+                        });
+                    }
+                }
+            });
+            renderCards(matchedRows, 'song');
+        }
+
+        function parseRows(rows) {
+            let parsed = [];
+            for (let i = 2; i < rows.length; i++) {
+                const row = rows[i];
+                const start = formatTime(row[2]);
+                const end = formatTime(row[3]);
+
+                if (start === "" || end === "") continue;
+
+                parsed.push({
+                    枠: row[0] || "",
+                    曲名: row[1] || "",
+                    開始: start,
+                    終了: end,
+                    時間: formatMinutes(row[4]),
+                    一言目標: row[5] || "",
+                    振り返り: row[6] || "",
+                    取組箇所: row[7] || "",
+                    次回向け: row[8] || "",
+                    備考: row[9] || ""
+                });
+            }
+
+            parsed.sort((a, b) => a.開始.localeCompare(b.開始));
+            return parsed;
+        }
+
+        function renderCards(dataList, mode = 'date') {
+            const container = document.getElementById('plan-container');
+            container.innerHTML = '';
+
+            if (dataList.length === 0) {
+                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
+                return;
+            }
+
+            dataList.forEach((item, index) => {
+                const planData = mode === 'song' ? item.row : item;
+                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${item.date}</span>` : '';
+
+                const 枠 = planData[0] || planData.枠 || "";
+                const 曲名 = planData[1] || planData.曲名 || "";
+                const 開始 = formatTime(planData[2] || planData.開始);
+                const 終了 = formatTime(planData[3] || planData.終了);
+                const 時間 = formatMinutes(planData[4] || planData.時間);
+                const 一言目標 = planData[5] || planData.一言目標 || "";
+                const 振り返り = planData[6] || planData.振り返り || "";
+                const 取組箇所 = planData[7] || planData.取組箇所 || "";
+                const 次回向け = planData[8] || planData.次回向け || "";
+                const 備考 = planData[9] || planData.備考 || "";
+
+                const cardId = `card-${index}`;
+
+                const cardHtml = `
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
+                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
+                        <div class="flex-1 p-5 sm:p-6">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
+                                    ${dateLabel}
+                                </div>
+                                <h3 class="text-xl font-bold text-slate-900 text-left">${曲名}</h3>
+                            </div>
+
+                            <div class="text-base text-slate-600 mb-4 font-semibold">
+                                時間：<span class="text-slate-900">${開始} 〜 ${終了} ${時間 ? `(${時間}分)` : ''}</span>
+                            </div>
+
+                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
+                                <span id="${cardId}-icon">▼</span>
+                                <span>詳細を開く / 閉じる</span>
+                            </button>
+
+                            <div id="${cardId}-content" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-3">
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">① 一言目標</span>
+                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${一言目標 || "（未設定）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">② 取組箇所</span>
+                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">③ 前回の振り返り</span>
+                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${振り返り || "（なし）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">④ 次回に向けて</span>
+                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${次回向け || "（未設定）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">⑤ 備考</span>
+                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${備考 || "（なし）"}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+        function toggleAccordion(cardId) {
+            const content = document.getElementById(`${cardId}-content`);
+            const icon = document.getElementById(`${cardId}-icon`);
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                icon.innerText = "▲";
+            } else {
+                content.classList.add('hidden');
+                icon.innerText = "▼";
+            }
+        }
+    </script>
+</body>
+</html>
