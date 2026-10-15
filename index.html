@@ -20,7 +20,7 @@
             </div>
             <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
             <p class="text-sm text-slate-500 mb-6">IDとパスワードを入力してください。</p>
-            <form onsubmit="checkPassword(event)" class="space-y-4">
+            <form onsubmit="handleLogin(event)" class="space-y-4">
                 <input type="text" id="id-input" placeholder="ID" 
                     class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base" style="--tw-ring-color: #23651C;" required>
                 <input type="password" id="password-input" placeholder="パスワード" 
@@ -65,7 +65,7 @@
     </div>
 
     <script>
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEimYBvzTzV2669G6QGn5rr5kevA2doeSym-_BSlxTdR_qRrZ3OxNOWXiPxaMcHECD/exec";
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyFD0aVWBLQ41cBQnKuhbdtfNe2wcxcY2PMR8uSRNXHK9Hh5hv4Y0JVYMDxwWDOB82-/exec";
         let serverData = null;
         let activeMode = 'date'; 
         let selectedTarget = '';
@@ -86,12 +86,10 @@
             return str;
         }
 
-        // 分（数値）を安全に抽出する関数
         function formatMinutes(val) {
             if (!val) return "";
             const str = String(val).trim();
             if (str.includes("T")) {
-                // 日付シリアル値になっている場合、分を計算または数値部分を抽出する
                 try {
                     const d = new Date(str);
                     if (!isNaN(d.getTime())) {
@@ -103,11 +101,11 @@
                 } catch (e) {}
                 return "";
             }
-            // 数字のみ抽出
             const match = str.match(/\d+/);
             return match ? match[0] : str;
         }
 
+        // サーバからデータを一度だけ取得
         async function fetchServerData() {
             if (serverData) return true;
             try {
@@ -119,7 +117,15 @@
             }
         }
 
-        async function checkPassword(event) {
+        // 画面をメインに切り替える
+        function showApp() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            initApp();
+        }
+
+        // ログイン試行
+        async function handleLogin(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
             const inputPass = document.getElementById('password-input').value.trim();
@@ -135,24 +141,22 @@
 
             if (inputId === serverData.auth.id && inputPass === serverData.auth.pass) {
                 sessionStorage.setItem('auth_passed', 'true');
-                revealApp();
+                showApp();
             } else {
                 errorMsg.innerText = "IDまたはパスワードが正しくありません";
                 errorMsg.classList.remove('hidden');
             }
         }
 
-        function revealApp() {
-            document.getElementById('auth-modal').classList.add('hidden');
-            document.getElementById('main-content').classList.remove('hidden');
-            initApp();
-        }
-
+        // ページロード時の判定（ループ防止のためfetch成功時のみ画面を開く）
         window.addEventListener('DOMContentLoaded', async () => {
             if (sessionStorage.getItem('auth_passed') === 'true') {
                 const success = await fetchServerData();
-                if (success) {
-                    revealApp();
+                if (success && serverData && serverData.auth) {
+                    showApp();
+                } else {
+                    // データ取得に失敗した場合は認証状態をクリアしてログイン画面を表示
+                    sessionStorage.removeItem('auth_passed');
                 }
             }
         });
