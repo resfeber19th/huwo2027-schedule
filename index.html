@@ -86,6 +86,28 @@
             return str;
         }
 
+        // 分（数値）を安全に抽出する関数
+        function formatMinutes(val) {
+            if (!val) return "";
+            const str = String(val).trim();
+            if (str.includes("T")) {
+                // 日付シリアル値になっている場合、分を計算または数値部分を抽出する
+                try {
+                    const d = new Date(str);
+                    if (!isNaN(d.getTime())) {
+                        const m = d.getMinutes();
+                        const h = d.getHours();
+                        const totalMin = (h * 60) + m;
+                        if (totalMin > 0) return `${totalMin}`;
+                    }
+                } catch (e) {}
+                return "";
+            }
+            // 数字のみ抽出
+            const match = str.match(/\d+/);
+            return match ? match[0] : str;
+        }
+
         async function fetchServerData() {
             if (serverData) return true;
             try {
@@ -244,7 +266,7 @@
                     曲名: row[1] || "",
                     開始: start,
                     終了: end,
-                    時間: row[4] || "",
+                    時間: formatMinutes(row[4]),
                     一言目標: row[5] || "",
                     振り返り: row[6] || "",
                     取組箇所: row[7] || "",
@@ -274,7 +296,7 @@
                 const 曲名 = planData[1] || planData.曲名 || "";
                 const 開始 = formatTime(planData[2] || planData.開始);
                 const 終了 = formatTime(planData[3] || planData.終了);
-                const 時間 = planData[4] || planData.時間 || "";
+                const 時間 = formatMinutes(planData[4] || planData.時間);
                 const 一言目標 = planData[5] || planData.一言目標 || "";
                 const 振り返り = planData[6] || planData.振り返り || "";
                 const 取組箇所 = planData[7] || planData.取組箇所 || "";
