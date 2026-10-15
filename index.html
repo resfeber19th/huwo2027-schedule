@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>合奏計画ポータル | スプコン2027</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans JP', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- パスワード認証モーダル (ID & パスワード両方に対応) -->
+    <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
+            <div class="inline-flex items-center justify-center w-12 h-12 bg-amber-50 text-amber-600 rounded-full mb-4 text-xl">
+                🎵
+            </div>
+            <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
+            <p class="text-sm text-slate-500 mb-6">IDとパスワードを入力してください。</p>
+            <form onsubmit="checkPassword(event)" class="space-y-4">
+                <input type="text" id="id-input" placeholder="IDを入力" 
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-center text-base">
+                <input type="password" id="password-input" placeholder="パスワードを入力" 
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-center text-base tracking-widest">
+                <button type="submit" 
+                    class="w-full bg-amber-500 hover:bg-amber-600 text-white font-medium py-3 rounded-xl transition shadow-sm cursor-pointer">
+                    入室する
+                </button>
+            </form>
+            <p id="error-msg" class="text-xs text-rose-500 mt-3 hidden">IDまたはパスワードが正しくありません</p>
+        </div>
+    </div>
+
+    <!-- メインコンテンツ -->
+    <div id="main-content" class="hidden flex-1 flex flex-col">
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+            <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">🎺</span>
+                    <h1 class="text-lg font-bold text-slate-900">スプコン2027 合奏計画</h1>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-4xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
+            
+            <!-- 上部切り替えタブ（日付別 / 曲別） -->
+            <div class="space-y-3">
+                <div>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">📅 練習日を選択</span>
+                    <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
+                </div>
+                <div>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">🎼 曲名で絞り込み</span>
+                    <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
+                </div>
+            </div>
+
+            <!-- 見出し表示 -->
+            <div id="current-view-title" class="text-lg font-bold text-slate-800 border-b border-slate-200 pb-2"></div>
+
+            <!-- 合奏計画カード一覧 -->
+            <div id="plan-container" class="space-y-4"></div>
+
+        </main>
+
+        <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400">
+            <p>&copy; 2027 スプコン実行委員会</p>
+        </footer>
+    </div>
+
+    <script>
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEimYBvzTzV2669G6QGn5rr5kevA2doeSym-_BSlxTdR_qRrZ3OxNOWXiPxaMcHECD/exec";
+        let serverData = null;
+        let activeMode = 'date'; // 'date' または 'song'
+        let selectedTarget = '';
+
+        async function checkPassword(event) {
+            event.preventDefault();
+            const inputId = document.getElementById('id-input').value.trim();
+            const inputPass = document.getElementById('password-input').value.trim();
+            const errorMsg = document.getElementById('error-msg');
+
+            try {
+                if (!serverData) {
+                    const response = await fetch(GAS_API_URL);
+                    serverData = await response.json();
+                }
+
+                // スプレッドシートのIDPASSシートのデータと比較
+                if (inputId === serverData.auth.id && inputPass === serverData.auth.pass) {
+                    document.getElementById('auth-modal').classList.add('hidden');
+                    document.getElementById('main-content').classList.remove('hidden');
+                    sessionStorage.setItem('auth_passed', 'true');
+                    initApp();
+                } else {
+                    errorMsg.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error("認証エラー", e);
+                errorMsg.innerText = "サーバーとの通信に失敗しました";
+                errorMsg.classList.remove('hidden');
+            }
+        }
+
+        window.onload = async function() {
+            if (sessionStorage.getItem('auth_passed') === 'true') {
+                try {
+                    const response = await fetch(GAS_API_URL);
+                    serverData = await response.json();
+                    document.getElementById('auth-modal').classList.add('hidden');
+                    document.getElementById('main-content').classList.remove('hidden');
+                    initApp();
+                } catch (e) {
+                    console.error("データ読み込み失敗", e);
+                }
+            }
+        }
+
+        function initApp() {
+            if (!serverData || serverData.plans.length === 0) return;
+            renderTabs();
+            // 初期表示は最初の日付
+            selectDateTab(serverData.plans[0].date);
+        }
+
+        // 全てのユニークな曲名リストを取得
+        function getAllSongs() {
+            const songs = new Set();
+            serverData.plans.forEach(plan => {
+                const rows = plan.rows;
+                for (let i = 2; i < rows.length; i++) {
+                    const songName = rows[i][1];
+                    if (songName && songName.trim() !== "") {
+                        songs.add(songName.trim());
+                    }
+                }
+            });
+            return Array.from(songs);
+        }
+
+        function renderTabs() {
+            // 日付タブの描画
+            const dateContainer = document.getElementById('date-tabs');
+            dateContainer.innerHTML = '';
+            serverData.plans.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
+                if (activeMode === 'date' && selectedTarget === item.date) {
+                    btn.className += ' bg-amber-500 text-white shadow-sm';
+                } else {
+                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+                }
+                btn.innerText = item.date;
+                btn.onclick = () => selectDateTab(item.date);
+                dateContainer.appendChild(btn);
+            });
+
+            // 曲別タブの描画
+            const songContainer = document.getElementById('song-tabs');
+            songContainer.innerHTML = '';
+            const songs = getAllSongs();
+            songs.forEach(song => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
+                if (activeMode === 'song' && selectedTarget === song) {
+                    btn.className += ' bg-indigo-600 text-white shadow-sm';
+                } else {
+                    btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+                }
+                btn.innerText = song;
+                btn.onclick = () => selectSongTab(song);
+                songContainer.appendChild(btn);
+            });
+        }
+
+        function selectDateTab(date) {
+            activeMode = 'date';
+            selectedTarget = date;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `📅 ${date} の合奏計画`;
+
+            const targetSheet = serverData.plans.find(d => d.date === date);
+            renderCards(parseRows(targetSheet ? targetSheet.rows : [], 'date'));
+        }
+
+        function selectSongTab(songName) {
+            activeMode = 'song';
+            selectedTarget = songName;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `🎼 「${songName}」の練習予定一覧`;
+
+            // 全日程から該当する曲の行を収集
+            let matchedRows = [];
+            serverData.plans.forEach(plan => {
+                const rows = plan.rows;
+                for (let i = 2; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (row[1] && row[1].trim() === songName) {
+                        // 日付情報も持たせておく
+                        matchedRows.push({
+                            date: plan.date,
+                            row: row
+                        });
+                    }
+                }
+            });
+            renderCards(matchedRows, 'song');
+        }
+
+        // 行データをパースしてオブジェクトの配列にし、開始時間順にソートする
+        function parseRows(rows, mode) {
+            let parsed = [];
+            for (let i = 2; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row[0] && !row[1]) continue;
+
+                parsed.push({
+                    枠: row[0] || "",
+                    曲名: row[1] || "",
+                    開始: row[2] || "",
+                    終了: row[3] || "",
+                    時間: row[4] || "",
+                    一言目標: row[5] || "",
+                    振り返り: row[6] || "",
+                    取組箇所: row[7] || "",
+                    次回向け: row[8] || "",
+                    備考: row[9] || ""
+                });
+            }
+
+            // 開始時間が早い順に自動整序
+            parsed.sort((a, b) => {
+                if (!a.開始) return 1;
+                if (!b.開始) return -1;
+                return a.開始.localeCompare(b.開始);
+            });
+
+            return parsed;
+        }
+
+        function renderCards(dataList, mode = 'date') {
+            const container = document.getElementById('plan-container');
+            container.innerHTML = '';
+
+            if (dataList.length === 0) {
+                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">該当するデータはありません</p>`;
+                return;
+            }
+
+            dataList.forEach((item, index) => {
+                // 曲別モードのときはitemにdateが含まれる
+                const planData = mode === 'song' ? item.row : item;
+                const dateLabel = mode === 'song' ? `<span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">練習日: ${item.date}</span>` : '';
+
+                const 枠 = planData[0] || planData.枠 || "";
+                const 曲名 = planData[1] || planData.曲名 || "";
+                const 開始 = planData[2] || planData.開始 || "";
+                const 終了 = planData[3] || planData.終了 || "";
+                const 時間 = planData[4] || planData.時間 || "";
+                const 一言目標 = planData[5] || planData.一言目標 || "";
+                const 振り返り = planData[6] || planData.振り返り || "";
+                const 取組箇所 = planData[7] || planData.取組箇所 || "";
+                const 次回向け = planData[8] || planData.次回向け || "";
+                const 備考 = planData[9] || planData.備考 || "";
+
+                const cardId = `card-${index}`;
+
+                const cardHtml = `
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
+                        <div class="w-3 bg-amber-400 flex-shrink-0"></div>
+                        <div class="flex-1 p-5 sm:p-6">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
+                                    ${dateLabel}
+                                </div>
+                                <h3 class="text-xl font-bold text-slate-900">${曲名}</h3>
+                            </div>
+
+                            <div class="text-sm text-slate-500 mb-4 font-medium">
+                                合奏時間：<span class="text-slate-800">${開始 || '--:--'} 〜 ${終了 || '--:--'} ${時間 ? `(${時間}分)` : ''}</span>
+                            </div>
+
+                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold text-amber-600 hover:text-amber-700 flex items-center space-x-1 cursor-pointer transition">
+                                <span id="${cardId}-icon">▼</span>
+                                <span>開く / 閉じる</span>
+                            </button>
+
+                            <div id="${cardId}-content" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-3">
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">① 一言目標</span>
+                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${一言目標 || "（未設定）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">② 合奏で取り組む箇所</span>
+                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
+                                </div>
+                                <div class="bg-slate-50 p-4 rounded-xl">
+                                    <span class="block text-xs font-bold text-slate-400 mb-1">③ 前回合奏の振り返り</span>
+                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${振り返り || "（なし）"}</p>
+                                </div>
+                                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs text-slate-400 pt-2 gap-1">
+                                    <span>④ 次回に向けて: ${次回向け || "-"}</span>
+                                    <span>⑤ 備考: ${備考 || "-"}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+        function toggleAccordion(cardId) {
+            const content = document.getElementById(`${cardId}-content`);
+            const icon = document.getElementById(`${cardId}-icon`);
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                icon.innerText = "▲";
+            } else {
+                content.classList.add('hidden');
+                icon.innerText = "▼";
+            }
+        }
+    </script>
+</body>
+</html>
