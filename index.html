@@ -66,7 +66,6 @@
     </div>
 
     <script>
-        // 新しいGASのAPIエンドポイント
         const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzwM3nhqUOldRg4efiMYzDOVu1SKvs7uyzMEKRLw42BaTJq_G96rWjtifQpdcewJuS4/exec";
         let serverData = null;
         let activeMode = 'date'; 
@@ -107,7 +106,6 @@
             return match ? match[0] : str;
         }
 
-        // サーバからデータを取得
         async function fetchServerData() {
             try {
                 const response = await fetch(GAS_API_URL);
@@ -119,14 +117,12 @@
             }
         }
 
-        // アプリ画面を表示
         function showApp() {
             document.getElementById('auth-modal').classList.add('hidden');
             document.getElementById('main-content').classList.remove('hidden');
             initApp();
         }
 
-        // ログインボタンを押したときの処理
         async function handleLogin(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
@@ -151,13 +147,11 @@
             }
         }
 
-        // ログアウト処理
         function handleLogout() {
             sessionStorage.removeItem('auth_passed');
             window.location.reload();
         }
 
-        // ページロード時の初期チェック
         window.addEventListener('DOMContentLoaded', async () => {
             if (sessionStorage.getItem('auth_passed') === 'true') {
                 const data = await fetchServerData();
@@ -327,7 +321,8 @@
                                     <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
                                     ${dateLabel}
                                 </div>
-                                <h3 class="text-xl font-bold text-slate-900 text-left">${曲名}</h3>
+                                <!-- 曲名を左揃え (text-left) に修正 -->
+                                <h3 class="text-xl font-bold text-slate-900 text-left w-full sm:w-auto">${曲名}</h3>
                             </div>
 
                             <div class="text-base text-slate-600 mb-4 font-semibold">
@@ -348,37 +343,4 @@
                                     <span class="block text-xs font-bold text-slate-400 mb-1">② 取組箇所</span>
                                     <p class="text-base text-slate-800 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
                                 </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">③ 前回の振り返り</span>
-                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${振り返り || "（なし）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">④ 次回に向けて</span>
-                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${次回向け || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">⑤ 備考</span>
-                                    <p class="text-base text-slate-800 whitespace-pre-wrap">${備考 || "（なし）"}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('beforeend', cardHtml);
-            });
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            if (content.classList.contains('hidden')) {
-                content.classList.remove('hidden');
-                icon.innerText = "▲";
-            } else {
-                content.classList.add('hidden');
-                icon.innerText = "▼";
-            }
-        }
-    </script>
-</body>
-</html>
+                                <div
