@@ -12,7 +12,6 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
-    <!-- 認証モーダル -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
@@ -34,7 +33,6 @@
         </div>
     </div>
 
-    <!-- メインコンテンツ -->
     <div id="main-content" class="hidden flex-1 flex flex-col">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -105,7 +103,6 @@
             return match ? match[0] : str;
         }
 
-        // サーバからデータを一度だけ取得
         async function fetchServerData() {
             if (serverData) return true;
             try {
@@ -117,14 +114,12 @@
             }
         }
 
-        // 画面をメインに切り替える
         function showApp() {
             document.getElementById('auth-modal').classList.add('hidden');
             document.getElementById('main-content').classList.remove('hidden');
             initApp();
         }
 
-        // ログイン試行
         async function handleLogin(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
@@ -148,14 +143,12 @@
             }
         }
 
-        // ページロード時の判定（ループ防止のためfetch成功時のみ画面を開く）
         window.addEventListener('DOMContentLoaded', async () => {
             if (sessionStorage.getItem('auth_passed') === 'true') {
                 const success = await fetchServerData();
                 if (success && serverData && serverData.auth) {
                     showApp();
                 } else {
-                    // データ取得に失敗した場合は認証状態をクリアしてログイン画面を表示
                     sessionStorage.removeItem('auth_passed');
                 }
             }
@@ -294,82 +287,4 @@
 
             dataList.forEach((item, index) => {
                 const planData = mode === 'song' ? item.row : item;
-                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${item.date}</span>` : '';
-
-                const 枠 = planData[0] || planData.枠 || "";
-                const 曲名 = planData[1] || planData.曲名 || "";
-                const 開始 = formatTime(planData[2] || planData.開始);
-                const 終了 = formatTime(planData[3] || planData.終了);
-                const 時間 = formatMinutes(planData[4] || planData.時間);
-                const 一言目標 = planData[5] || planData.一言目標 || "";
-                const 振り返り = planData[6] || planData.振り返り || "";
-                const 取組箇所 = planData[7] || planData.取組箇所 || "";
-                const 次回向け = planData[8] || planData.次回向け || "";
-                const 備考 = planData[9] || planData.備考 || "";
-
-                const cardId = `card-${index}`;
-
-                const cardHtml = `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${枠}</span>
-                                    ${dateLabel}
-                                </div>
-                                <h3 class="text-xl font-bold text-slate-900">${曲名}</h3>
-                            </div>
-
-                            <div class="text-sm text-slate-500 mb-4 font-medium">
-                                時間：<span class="text-slate-800">${開始} 〜 ${終了} ${時間 ? `(${時間}分)` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" class="hidden mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">① 一言目標</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${一言目標 || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">② 取組箇所</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${取組箇所 || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">③ 前回の振り返り</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${振り返り || "（なし）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">④ 次回に向けて</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${次回向け || "（未設定）"}</p>
-                                </div>
-                                <div class="bg-slate-50 p-4 rounded-xl">
-                                    <span class="block text-xs font-bold text-slate-400 mb-1">⑤ 備考</span>
-                                    <p class="text-sm text-slate-700 whitespace-pre-wrap">${備考 || "（なし）"}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('beforeend', cardHtml);
-            });
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            if (content.classList.contains('hidden')) {
-                content.classList.remove('hidden');
-                icon.innerText = "▲";
-            } else {
-                content.classList.add('hidden');
-                icon.innerText = "▼";
-            }
-        }
-    </script>
-</body>
-</html>
+                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651
