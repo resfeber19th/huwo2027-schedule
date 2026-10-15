@@ -12,21 +12,21 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
-    <!-- パスワード認証モーダル (ID & パスワード両方に対応) -->
+    <!-- パスワード認証モーダル -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
-            <div class="inline-flex items-center justify-center w-12 h-12 bg-amber-50 text-amber-600 rounded-full mb-4 text-xl">
-                🎵
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
+                認証
             </div>
             <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
             <p class="text-sm text-slate-500 mb-6">IDとパスワードを入力してください。</p>
             <form onsubmit="checkPassword(event)" class="space-y-4">
                 <input type="text" id="id-input" placeholder="IDを入力" 
-                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-center text-base">
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base" style="--tw-ring-color: #23651C;">
                 <input type="password" id="password-input" placeholder="パスワードを入力" 
-                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-center text-base tracking-widest">
+                    class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base tracking-widest" style="--tw-ring-color: #23651C;">
                 <button type="submit" 
-                    class="w-full bg-amber-500 hover:bg-amber-600 text-white font-medium py-3 rounded-xl transition shadow-sm cursor-pointer">
+                    class="w-full text-white font-medium py-3 rounded-xl transition shadow-sm cursor-pointer hover:opacity-90" style="background-color: #23651C;">
                     入室する
                 </button>
             </form>
@@ -39,8 +39,7 @@
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div class="flex items-center space-x-3">
-                    <span class="text-2xl">🎺</span>
-                    <h1 class="text-lg font-bold text-slate-900">スプコン2027 合奏計画</h1>
+                    <h1 class="text-lg font-bold" style="color: #23651C;">スプコン2027 合奏計画</h1>
                 </div>
             </div>
         </header>
@@ -50,11 +49,11 @@
             <!-- 上部切り替えタブ（日付別 / 曲別） -->
             <div class="space-y-3">
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">📅 練習日を選択</span>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">練習日を選択</span>
                     <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
                 </div>
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">🎼 曲名で絞り込み</span>
+                    <span class="text-xs font-bold text-slate-400 block mb-1">曲名で絞り込み</span>
                     <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
                 </div>
             </div>
@@ -75,8 +74,26 @@
     <script>
         const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEimYBvzTzV2669G6QGn5rr5kevA2doeSym-_BSlxTdR_qRrZ3OxNOWXiPxaMcHECD/exec";
         let serverData = null;
-        let activeMode = 'date'; // 'date' または 'song'
+        let activeMode = 'date'; 
         let selectedTarget = '';
+
+        // スプレッドシートの時刻データを「HH:mm」形式に綺麗に変換する関数
+        function formatTime(val) {
+            if (!val) return "";
+            const str = String(val).trim();
+            // ISO形式や日付つき文字列（例: 1899-12-30T09:00:00.000Z）の場合
+            if (str.includes("T")) {
+                const parts = str.split("T");
+                if (parts.length > 1) {
+                    const timePart = parts[1].split(".")[0]; // 09:00:00
+                    const timeSub = timePart.split(":");
+                    if (timeSub.length >= 2) {
+                        return `${timeSub[0]}:${timeSub[1]}`;
+                    }
+                }
+            }
+            return str;
+        }
 
         async function checkPassword(event) {
             event.preventDefault();
@@ -90,7 +107,6 @@
                     serverData = await response.json();
                 }
 
-                // スプレッドシートのIDPASSシートのデータと比較
                 if (inputId === serverData.auth.id && inputPass === serverData.auth.pass) {
                     document.getElementById('auth-modal').classList.add('hidden');
                     document.getElementById('main-content').classList.remove('hidden');
@@ -123,19 +139,21 @@
         function initApp() {
             if (!serverData || serverData.plans.length === 0) return;
             renderTabs();
-            // 初期表示は最初の日付
             selectDateTab(serverData.plans[0].date);
         }
 
-        // 全てのユニークな曲名リストを取得
         function getAllSongs() {
             const songs = new Set();
             serverData.plans.forEach(plan => {
                 const rows = plan.rows;
                 for (let i = 2; i < rows.length; i++) {
-                    const songName = rows[i][1];
-                    if (songName && songName.trim() !== "") {
-                        songs.add(songName.trim());
+                    const row = rows[i];
+                    const start = formatTime(row[2]);
+                    const end = formatTime(row[3]);
+                    const songName = row[1] ? String(row[1]).trim() : "";
+
+                    if (start !== "" && end !== "" && songName !== "") {
+                        songs.add(songName);
                     }
                 }
             });
@@ -143,14 +161,14 @@
         }
 
         function renderTabs() {
-            // 日付タブの描画
             const dateContainer = document.getElementById('date-tabs');
             dateContainer.innerHTML = '';
             serverData.plans.forEach(item => {
                 const btn = document.createElement('button');
                 btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
                 if (activeMode === 'date' && selectedTarget === item.date) {
-                    btn.className += ' bg-amber-500 text-white shadow-sm';
+                    btn.className += ' text-white shadow-sm';
+                    btn.style.backgroundColor = '#23651C';
                 } else {
                     btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
                 }
@@ -159,7 +177,6 @@
                 dateContainer.appendChild(btn);
             });
 
-            // 曲別タブの描画
             const songContainer = document.getElementById('song-tabs');
             songContainer.innerHTML = '';
             const songs = getAllSongs();
@@ -167,7 +184,8 @@
                 const btn = document.createElement('button');
                 btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer`;
                 if (activeMode === 'song' && selectedTarget === song) {
-                    btn.className += ' bg-indigo-600 text-white shadow-sm';
+                    btn.className += ' text-white shadow-sm';
+                    btn.style.backgroundColor = '#23651C';
                 } else {
                     btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
                 }
@@ -181,7 +199,8 @@
             activeMode = 'date';
             selectedTarget = date;
             renderTabs();
-            document.getElementById('current-view-title').innerText = `📅 ${date} の合奏計画`;
+            document.getElementById('current-view-titleinnerText'] = '';
+            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
 
             const targetSheet = serverData.plans.find(d => d.date === date);
             renderCards(parseRows(targetSheet ? targetSheet.rows : [], 'date'));
@@ -191,16 +210,18 @@
             activeMode = 'song';
             selectedTarget = songName;
             renderTabs();
-            document.getElementById('current-view-title').innerText = `🎼 「${songName}」の練習予定一覧`;
+            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定一覧`;
 
-            // 全日程から該当する曲の行を収集
             let matchedRows = [];
             serverData.plans.forEach(plan => {
                 const rows = plan.rows;
                 for (let i = 2; i < rows.length; i++) {
                     const row = rows[i];
-                    if (row[1] && row[1].trim() === songName) {
-                        // 日付情報も持たせておく
+                    const start = formatTime(row[2]);
+                    const end = formatTime(row[3]);
+                    const song = row[1] ? String(row[1]).trim() : "";
+
+                    if (start !== "" && end !== "" && song === songName) {
                         matchedRows.push({
                             date: plan.date,
                             row: row
@@ -211,18 +232,20 @@
             renderCards(matchedRows, 'song');
         }
 
-        // 行データをパースしてオブジェクトの配列にし、開始時間順にソートする
         function parseRows(rows, mode) {
             let parsed = [];
             for (let i = 2; i < rows.length; i++) {
                 const row = rows[i];
-                if (!row[0] && !row[1]) continue;
+                const start = formatTime(row[2]);
+                const end = formatTime(row[3]);
+
+                if (start === "" || end === "") continue;
 
                 parsed.push({
                     枠: row[0] || "",
                     曲名: row[1] || "",
-                    開始: row[2] || "",
-                    終了: row[3] || "",
+                    開始: start,
+                    終了: end,
                     時間: row[4] || "",
                     一言目標: row[5] || "",
                     振り返り: row[6] || "",
@@ -232,13 +255,7 @@
                 });
             }
 
-            // 開始時間が早い順に自動整序
-            parsed.sort((a, b) => {
-                if (!a.開始) return 1;
-                if (!b.開始) return -1;
-                return a.開始.localeCompare(b.開始);
-            });
-
+            parsed.sort((a, b) => a.開始.localeCompare(b.開始));
             return parsed;
         }
 
@@ -247,19 +264,18 @@
             container.innerHTML = '';
 
             if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">該当するデータはありません</p>`;
+                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">現在掲載されている予定はありません</p>`;
                 return;
             }
 
             dataList.forEach((item, index) => {
-                // 曲別モードのときはitemにdateが含まれる
                 const planData = mode === 'song' ? item.row : item;
-                const dateLabel = mode === 'song' ? `<span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium">練習日: ${item.date}</span>` : '';
+                const dateLabel = mode === 'song' ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">練習日: ${item.date}</span>` : '';
 
                 const 枠 = planData[0] || planData.枠 || "";
                 const 曲名 = planData[1] || planData.曲名 || "";
-                const 開始 = planData[2] || planData.開始 || "";
-                const 終了 = planData[3] || planData.終了 || "";
+                const 開始 = formatTime(planData[2] || planData.開始);
+                const 終了 = formatTime(planData[3] || planData.終了);
                 const 時間 = planData[4] || planData.時間 || "";
                 const 一言目標 = planData[5] || planData.一言目標 || "";
                 const 振り返り = planData[6] || planData.振り返り || "";
@@ -271,7 +287,7 @@
 
                 const cardHtml = `
                     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 bg-amber-400 flex-shrink-0"></div>
+                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
                         <div class="flex-1 p-5 sm:p-6">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                                 <div class="flex items-center space-x-2">
@@ -282,10 +298,10 @@
                             </div>
 
                             <div class="text-sm text-slate-500 mb-4 font-medium">
-                                合奏時間：<span class="text-slate-800">${開始 || '--:--'} 〜 ${終了 || '--:--'} ${時間 ? `(${時間}分)` : ''}</span>
+                                合奏時間：<span class="text-slate-800">${開始} 〜 ${終了} ${時間 ? `(${时间分表記(時間)})` : ''}</span>
                             </div>
 
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold text-amber-600 hover:text-amber-700 flex items-center space-x-1 cursor-pointer transition">
+                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
                                 <span id="${cardId}-icon">▼</span>
                                 <span>開く / 閉じる</span>
                             </button>
@@ -313,6 +329,15 @@
                 `;
                 container.insertAdjacentHTML('beforeend', cardHtml);
             });
+        }
+
+        function 時間分表記(val) {
+            const str = String(val).trim();
+            if (str.includes("T")) {
+                // 万が一時間カラムも日付シリアルになっている場合の対策
+                return "時間";
+            }
+            return `${str}分`;
         }
 
         function toggleAccordion(cardId) {
