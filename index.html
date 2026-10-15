@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>スプコン2027 合奏計画</title>
+    <title>合奏計画ポータル</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -12,13 +12,13 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
-    <!-- 認証モーダル（表示/非表示は style.display で制御：Tailwindの hidden と flex の競合を避ける） -->
+    <!-- 認証モーダル -->
     <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
                 認証
             </div>
-            <h2 class="text-xl font-bold text-slate-900 mb-2">ログイン</h2>
+            <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
 
             <!-- 読み込み中表示（自動ログイン時） -->
             <div id="loading-box" style="display:none;" class="py-6">
@@ -46,7 +46,7 @@
     <div id="main-content" class="flex-1 flex-col" style="display:none;">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-                <h1 class="text-lg font-bold" style="color: #23651C;">スプコン2027　合奏計画</h1>
+                <h1 class="text-lg font-bold" style="color: #23651C;">合奏計画ポータル</h1>
                 <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
             </div>
         </header>
@@ -69,7 +69,7 @@
         </main>
 
         <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400">
-            <p>&copy;HUWO技術局</p>
+            <p>&copy; 2027 スプコン実行委員会</p>
         </footer>
     </div>
 
@@ -78,328 +78,11 @@
         const SESSION_KEY = 'auth_passed';
         const FETCH_TIMEOUT_MS = 20000;
 
-        let plans = [];            // 有効な練習日シートのみ
+        let plans = [];
         let activeMode = 'date';
         let selectedTarget = '';
 
         /* ---------- ユーティリティ ---------- */
 
-        // sessionStorage が使えない環境（iframe制限・プライベートモード等）でも落ちないようにする
         const store = {
-            get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
-            set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} },
-            remove(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
-        };
-
-        function escapeHtml(val) {
-            return String(val ?? '')
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-        }
-
-        function show(id, display = 'block') { document.getElementById(id).style.display = display; }
-        function hide(id) { document.getElementById(id).style.display = 'none'; }
-
-        function showError(msg) {
-            const el = document.getElementById('error-msg');
-            el.innerText = msg;
-            el.style.display = 'block';
-        }
-        function clearError() { hide('error-msg'); }
-
-        function formatTime(val) {
-            if (!val) return "";
-            const str = String(val).trim();
-            if (str.includes("T")) {
-                const parts = str.split("T");
-                if (parts.length > 1) {
-                    const timePart = parts[1].split(".")[0];
-                    const timeSub = timePart.split(":");
-                    if (timeSub.length >= 2) return `${timeSub[0]}:${timeSub[1]}`;
-                }
-            }
-            return str;
-        }
-
-        function formatMinutes(val) {
-            if (!val) return "";
-            const str = String(val).trim();
-            if (str.includes("T")) {
-                const d = new Date(str);
-                if (!isNaN(d.getTime())) {
-                    const totalMin = d.getHours() * 60 + d.getMinutes();
-                    if (totalMin > 0) return `${totalMin}`;
-                }
-                return "";
-            }
-            const match = str.match(/\d+/);
-            return match ? match[0] : str;
-        }
-
-        // GASからデータ取得（タイムアウト付き）
-        async function fetchServerData() {
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-            try {
-                const res = await fetch(GAS_API_URL, { signal: ctrl.signal });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                if (!data || !data.auth || !Array.isArray(data.plans)) {
-                    throw new Error('INVALID_STRUCTURE');
-                }
-                return data;
-            } finally {
-                clearTimeout(timer);
-            }
-        }
-
-        /* ---------- ログイン / ログアウト ---------- */
-
-        async function handleLogin(event) {
-            event.preventDefault();
-            const inputId = document.getElementById('id-input').value.trim();
-            const inputPass = document.getElementById('password-input').value.trim();
-            const btn = document.getElementById('login-btn');
-            clearError();
-            btn.disabled = true;
-            btn.innerText = '確認中…';
-
-            let data;
-            try {
-                data = await fetchServerData();
-            } catch (e) {
-                console.error(e);
-                showError(e.message === 'INVALID_STRUCTURE'
-                    ? 'サーバーからのデータ構造が不正です'
-                    : '通信エラーが発生しました（時間をおいて再度お試しください）');
-                btn.disabled = false;
-                btn.innerText = 'ログイン';
-                return;
-            }
-
-            btn.disabled = false;
-            btn.innerText = 'ログイン';
-
-            // 文字列として比較（スプレッドシート側が数値でも一致するように）
-            if (inputId === String(data.auth.id).trim() && inputPass === String(data.auth.pass).trim()) {
-                store.set(SESSION_KEY, 'true');   // 失敗しても無視（ログイン自体は成功させる）
-                enterApp(data);
-            } else {
-                showError('IDまたはパスワードが正しくありません');
-            }
-        }
-
-        function handleLogout() {
-            store.remove(SESSION_KEY);
-            window.location.reload();
-        }
-
-        // 再訪問時：セッションがあれば読み込み中表示を出して1回だけ取得
-        window.addEventListener('DOMContentLoaded', async () => {
-            if (store.get(SESSION_KEY) !== 'true') return;
-
-            hide('login-box');
-            show('loading-box');
-            try {
-                const data = await fetchServerData();
-                enterApp(data);
-            } catch (e) {
-                console.error('Auto-login failed:', e);
-                store.remove(SESSION_KEY);
-                hide('loading-box');
-                show('login-box');
-                showError('自動ログインに失敗しました。もう一度ログインしてください');
-            }
-        });
-
-        // ログイン成功後の画面切り替え。描画エラーがあってもログイン画面には戻さない
-        function enterApp(data) {
-            hide('auth-modal');
-            show('main-content', 'flex');
-            try {
-                initApp(data);
-            } catch (e) {
-                console.error('Render error:', e);
-                document.getElementById('plan-container').innerHTML =
-                    `<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。再読み込みしてください。</p>`;
-            }
-        }
-
-        /* ---------- 初期化・タブ ---------- */
-
-        function initApp(data) {
-            // 「ひながた」などのテンプレートシートを除外
-            plans = (data.plans || []).filter(p => p && p.date && !String(p.date).includes("ひながた"));
-
-            if (plans.length === 0) {
-                document.getElementById('plan-container').innerHTML =
-                    `<p class="text-sm text-slate-400 text-center py-8">有効な練習日シートが見つかりません</p>`;
-                return;
-            }
-            selectDateTab(String(plans[0].date));
-        }
-
-        // 1行を共通のオブジェクトに変換（開始・終了・曲名が揃っていなければ null）
-        function normalizeRow(row) {
-            if (!Array.isArray(row)) return null;
-            const 開始 = formatTime(row[2]);
-            const 終了 = formatTime(row[3]);
-            const 曲名 = row[1] ? String(row[1]).trim() : "";
-            if (開始 === "" || 終了 === "" || 曲名 === "") return null;
-            return {
-                枠: row[0] || "",
-                曲名,
-                開始,
-                終了,
-                時間: formatMinutes(row[4]),
-                一言目標: row[5] || "",
-                振り返り: row[6] || "",
-                取組箇所: row[7] || "",
-                次回向け: row[8] || "",
-                備考: row[9] || ""
-            };
-        }
-
-        function getAllSongs() {
-            const songs = new Set();
-            plans.forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n) songs.add(n.曲名);
-                });
-            });
-            return Array.from(songs);
-        }
-
-        function makeTabButton(label, isActive, onClick) {
-            const btn = document.createElement('button');
-            btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer';
-            if (isActive) {
-                btn.className += ' text-white shadow-sm';
-                btn.style.backgroundColor = '#23651C';
-            } else {
-                btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
-            }
-            btn.innerText = label;       // innerText なのでXSS安全
-            btn.onclick = onClick;
-            return btn;
-        }
-
-        function renderTabs() {
-            const dateContainer = document.getElementById('date-tabs');
-            dateContainer.innerHTML = '';
-            plans.forEach(item => {
-                const d = String(item.date);
-                dateContainer.appendChild(
-                    makeTabButton(d, activeMode === 'date' && selectedTarget === d, () => selectDateTab(d))
-                );
-            });
-
-            const songContainer = document.getElementById('song-tabs');
-            songContainer.innerHTML = '';
-            getAllSongs().forEach(song => {
-                songContainer.appendChild(
-                    makeTabButton(song, activeMode === 'song' && selectedTarget === song, () => selectSongTab(song))
-                );
-            });
-        }
-
-        function selectDateTab(date) {
-            activeMode = 'date';
-            selectedTarget = date;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
-
-            const sheet = plans.find(p => String(p.date) === date);
-            const list = ((sheet && sheet.rows) || []).slice(2)
-                .map(normalizeRow)
-                .filter(Boolean)
-                .sort((a, b) => a.開始.localeCompare(b.開始));
-            renderCards(list, 'date');
-        }
-
-        function selectSongTab(songName) {
-            activeMode = 'song';
-            selectedTarget = songName;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
-
-            const list = [];
-            plans.forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n && n.曲名 === songName) list.push({ ...n, date: String(plan.date) });
-                });
-            });
-            renderCards(list, 'song');
-        }
-
-        /* ---------- カード描画 ---------- */
-
-        function detailBlock(label, value, emptyText) {
-            return `
-                <div class="bg-slate-50 p-4 rounded-xl">
-                    <span class="block text-xs font-bold text-slate-400 mb-1">${label}</span>
-                    <p class="text-base text-slate-800 whitespace-pre-wrap">${value ? escapeHtml(value) : emptyText}</p>
-                </div>`;
-        }
-
-        function renderCards(dataList, mode = 'date') {
-            const container = document.getElementById('plan-container');
-            container.innerHTML = '';
-
-            if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const dateLabel = mode === 'song'
-                    ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${escapeHtml(item.date)}</span>`
-                    : '';
-                const cardId = `card-${index}`;
-
-                container.insertAdjacentHTML('beforeend', `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${escapeHtml(item.枠)}</span>
-                                    ${dateLabel}
-                                </div>
-                                <h3 class="text-xl font-bold text-slate-900 text-left w-full sm:w-auto">${escapeHtml(item.曲名)}</h3>
-                            </div>
-
-                            <div class="text-base text-slate-600 mb-4 font-semibold">
-                                時間：<span class="text-slate-900">${escapeHtml(item.開始)} 〜 ${escapeHtml(item.終了)} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>詳細を開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                ${detailBlock('① 一言目標', item.一言目標, '（未設定）')}
-                                ${detailBlock('② 取組箇所', item.取組箇所, '（未設定）')}
-                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（未設定）')}
-                                ${detailBlock('④ 次回に向けて', item.次回向け, '（未設定）')}
-                                ${detailBlock('⑤ 備考', item.備考, '（未設定）')}
-                            </div>
-                        </div>
-                    </div>
-                `);
-            });
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            const isClosed = content.style.display === 'none';
-            content.style.display = isClosed ? 'block' : 'none';
-            icon.innerText = isClosed ? '▲' : '▼';
-        }
-    </script>
-</body>
-</html>
+            get(k) { try { return sessionStorage.getItem
