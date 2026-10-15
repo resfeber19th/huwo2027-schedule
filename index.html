@@ -13,16 +13,17 @@
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
     <!-- 認証モーダル -->
-    <div id="auth-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div id="auth-modal" class="fixed inset-0 bg-slate-900/65 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
-            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white" style="background-color: #23651C;">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white shadow-sm" style="background-color: #23651C;">
                 認証
             </div>
             <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
 
             <!-- 読み込み中表示（自動ログイン時） -->
             <div id="loading-box" style="display:none;" class="py-6">
-                <p class="text-sm text-slate-500">データを読み込み中です…（数秒かかることがあります）</p>
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-200 border-t-[#23651C] mb-3"></div>
+                <p class="text-sm text-slate-500">データを読み込み中です…</p>
             </div>
 
             <div id="login-box">
@@ -44,7 +45,7 @@
 
     <!-- メインコンテンツ -->
     <div id="main-content" class="flex-1 flex-col" style="display:none;">
-        <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
                 <h1 class="text-lg font-bold" style="color: #23651C;">合奏計画ポータル</h1>
                 <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
@@ -75,14 +76,12 @@
 
     <script>
         const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyoNd_RolzAmFpGNJCce7Ume5luybFG-6PH6dbKsFD7GYlwk9S8wuVPFsoMhu4i8aZ5/exec";
-        const SESSION_KEY = 'auth_passed';
-        const FETCH_TIMEOUT_MS = 20000;
+        const SESSION_KEY = 'auth_passed_v2';
+        const FETCH_TIMEOUT_MS = 25000;
 
         let plans = [];
         let activeMode = 'date';
         let selectedTarget = '';
-
-        /* ---------- ユーティリティ ---------- */
 
         const store = {
             get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
@@ -106,6 +105,7 @@
         }
         function clearError() { hide('error-msg'); }
 
+        // 時間フォーマット（安全なパース）
         function formatTime(val) {
             if (!val) return "";
             const str = String(val).trim();
@@ -117,32 +117,40 @@
                     if (timeSub.length >= 2) return `${timeSub[0]}:${timeSub[1]}`;
                 }
             }
+            const match = str.match(/(\d{1,2}):(\d{2})/);
+            if (match) return `${match[1]}:${match[2]}`;
             return str;
         }
 
-        // 開始・終了の時刻文字列から「何分間か」を自動計算する
+        // 開始・終了から分数を安全に計算（クラッシュ防止のtry-catch内包）
         function formatMinutes(startTimeStr, endTimeStr) {
             if (!startTimeStr || !endTimeStr) return "";
             try {
-                const parseTime = (str) => {
-                    const cleanStr = String(str).trim();
-                    const match = cleanStr.match(/(\d{1,2}):(\d{2})/);
-                    if (match) {
-                        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+                const parseToMin = (s) => {
+                    const clean = String(s).trim();
+                    // ISO形式や日付型文字列からも時分を抽出
+                    if (clean.includes("T")) {
+                        const tPart = clean.split("T")[1];
+                        const tSub = tPart.split(":");
+                        if (tSub.length >= 2) return parseInt(tSub[0], 10) * 60 + parseInt(tSub[1], 10);
+                    }
+                    const m = clean.match(/(\d{1,2}):(\d{2})/);
+                    if (m) {
+                        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
                     }
                     return null;
                 };
 
-                const startMin = parseTime(startTimeStr);
-                const endMin = parseTime(endTimeStr);
+                const startMin = parseToMin(startTimeStr);
+                const endMin = parseToMin(endTimeStr);
 
                 if (startMin !== null && endMin !== null) {
                     let diff = endMin - startMin;
                     if (diff < 0) diff += 24 * 60;
-                    return `${diff}`;
+                    return diff > 0 ? `${diff}` : "";
                 }
             } catch (e) {
-                console.error("Minute calculation error:", e);
+                console.error("Minute calculation warning:", e);
             }
             return "";
         }
@@ -152,7 +160,7 @@
             const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
             try {
                 const res = await fetch(GAS_API_URL, { signal: ctrl.signal });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) throw new Error(`HTTP_${res.status}`);
                 const data = await res.json();
                 if (!data || !data.auth || !Array.isArray(data.plans)) {
                     throw new Error('INVALID_STRUCTURE');
@@ -163,8 +171,6 @@
             }
         }
 
-        /* ---------- ログイン / ログアウト ---------- */
-
         async function handleLogin(event) {
             event.preventDefault();
             const inputId = document.getElementById('id-input').value.trim();
@@ -174,27 +180,22 @@
             btn.disabled = true;
             btn.innerText = '確認中…';
 
-            let data;
             try {
-                data = await fetchServerData();
-            } catch (e) {
-                console.error(e);
-                showError(e.message === 'INVALID_STRUCTURE'
-                    ? 'サーバーからのデータ構造が不正です'
-                    : '通信エラーが発生しました（時間をおいて再度お試しください）');
+                const data = await fetchServerData();
                 btn.disabled = false;
                 btn.innerText = 'ログイン';
-                return;
-            }
 
-            btn.disabled = false;
-            btn.innerText = 'ログイン';
-
-            if (inputId === String(data.auth.id).trim() && inputPass === String(data.auth.pass).trim()) {
-                store.set(SESSION_KEY, 'true');
-                enterApp(data);
-            } else {
-                showError('IDまたはパスワードが正しくありません');
+                if (inputId === String(data.auth.id).trim() && inputPass === String(data.auth.pass).trim()) {
+                    store.set(SESSION_KEY, 'true');
+                    enterApp(data);
+                } else {
+                    showError('IDまたはパスワードが正しくありません');
+                }
+            } catch (e) {
+                console.error(e);
+                btn.disabled = false;
+                btn.innerText = 'ログイン';
+                showError('通信エラーが発生しました。時間をおいて再度お試しください');
             }
         }
 
@@ -203,20 +204,22 @@
             window.location.reload();
         }
 
+        // 起動時の自動ログイン（ループを防ぐ安全設計）
         window.addEventListener('DOMContentLoaded', async () => {
             if (store.get(SESSION_KEY) !== 'true') return;
 
             hide('login-box');
             show('loading-box');
+            
             try {
                 const data = await fetchServerData();
                 enterApp(data);
             } catch (e) {
-                console.error('Auto-login failed:', e);
+                console.warn('Auto-login failed, fallback to login screen:', e);
                 store.remove(SESSION_KEY);
                 hide('loading-box');
                 show('login-box');
-                showError('自動ログインに失敗しました。もう一度ログインしてください');
+                // 自動ログイン失敗時はエラーメッセージを出さずスムーズにログインフォームを表示してループを完全阻止
             }
         });
 
@@ -231,8 +234,6 @@
                     `<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。再読み込みしてください。</p>`;
             }
         }
-
-        /* ---------- 初期化・タブ ---------- */
 
         function initApp(data) {
             plans = (data.plans || []).filter(p => p && p.date && !String(p.date).includes("ひながた"));
@@ -251,12 +252,13 @@
             const 終了 = formatTime(row[3]);
             const 曲名 = row[1] ? String(row[1]).trim() : "";
             if (開始 === "" || 終了 === "" || 曲名 === "") return null;
+            
             return {
                 枠: row[0] || "",
                 曲名,
                 開始,
                 終了,
-                時間: formatMinutes(row[2], row[3]), // 開始・終了から自動計算（修正済）
+                時間: formatMinutes(row[2], row[3]),
                 一言目標: row[5] || "",
                 振り返り: row[6] || "",
                 取組箇所: row[7] || "",
@@ -304,4 +306,105 @@
             songContainer.innerHTML = '';
             getAllSongs().forEach(song => {
                 songContainer.appendChild(
-                    makeTabButton(song, activeMode
+                    makeTabButton(song, activeMode === 'song' && selectedTarget === song, () => selectSongTab(song))
+                );
+            });
+        }
+
+        function selectDateTab(date) {
+            activeMode = 'date';
+            selectedTarget = date;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
+
+            const sheet = plans.find(p => String(p.date) === date);
+            const list = ((sheet && sheet.rows) || []).slice(2)
+                .map(normalizeRow)
+                .filter(Boolean)
+                .sort((a, b) => a.開始.localeCompare(b.開始));
+            renderCards(list, 'date');
+        }
+
+        function selectSongTab(songName) {
+            activeMode = 'song';
+            selectedTarget = songName;
+            renderTabs();
+            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
+
+            const list = [];
+            plans.forEach(plan => {
+                (plan.rows || []).slice(2).forEach(row => {
+                    const n = normalizeRow(row);
+                    if (n && n.曲名 === songName) list.push({ ...n, date: String(plan.date) });
+                });
+            });
+            renderCards(list, 'song');
+        }
+
+        function detailBlock(label, value, emptyText) {
+            return `
+                <div class="bg-slate-50 p-4 rounded-xl">
+                    <span class="block text-xs font-bold text-slate-400 mb-1">${label}</span>
+                    <p class="text-base text-slate-800 whitespace-pre-wrap">${value ? escapeHtml(value) : emptyText}</p>
+                </div>`;
+        }
+
+        function renderCards(dataList, mode = 'date') {
+            const container = document.getElementById('plan-container');
+            container.innerHTML = '';
+
+            if (dataList.length === 0) {
+                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
+                return;
+            }
+
+            dataList.forEach((item, index) => {
+                const dateLabel = mode === 'song'
+                    ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${escapeHtml(item.date)}</span>`
+                    : '';
+                const cardId = `card-${index}`;
+
+                container.insertAdjacentHTML('beforeend', `
+                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
+                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
+                        <div class="flex-1 p-5 sm:p-6">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${escapeHtml(item.枠)}</span>
+                                    ${dateLabel}
+                                </div>
+                                <h3 class="text-xl font-bold text-slate-900 text-left">${escapeHtml(item.曲名)}</h3>
+                            </div>
+
+                            <div class="text-base text-slate-600 mb-4 font-semibold">
+                                時間：<span class="text-slate-900">${escapeHtml(item.開始)} 〜 ${escapeHtml(item.終了)} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
+                            </div>
+
+                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
+                                <span id="${cardId}-icon">▼</span>
+                                <span>詳細を開く / 閉じる</span>
+                            </button>
+
+                            <div id="${cardId}-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                                ${detailBlock('① 一言目標', item.一言目標, '（なし）')}
+                                ${detailBlock('② 取組箇所', item.取組箇所, '（なし）')}
+                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（なし）')}
+                                ${detailBlock('④ 次回に向けて', item.次回向け, '（なし）')}
+                                ${detailBlock('⑤ 備考', item.備考, '（なし）')}
+                            </div>
+                        </div>
+                    </div>
+                `);
+            });
+        }
+
+        function toggleAccordion(cardId) {
+            const content = document.getElementById(`${cardId}-content`);
+            const icon = document.getElementById(`${cardId}-icon`);
+            const isClosed = content.style.display === 'none';
+            content.style.display = isClosed ? 'block' : 'none';
+            icon.innerText = isClosed ? '▲' : '▼';
+        }
+    </script>
+</body>
+</html>
