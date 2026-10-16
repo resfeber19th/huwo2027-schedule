@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>合奏計画ポータル</title>
+    <title>HUWO2027 合奏計画</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -18,7 +18,7 @@
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full mb-4 text-sm font-bold text-white shadow-sm" style="background-color: #23651C;">
                 認証
             </div>
-            <h2 class="text-xl font-bold text-slate-900 mb-2">合奏計画閲覧認証</h2>
+            <h2 class="text-xl font-bold text-slate-900 mb-2">ログイン</h2>
 
             <!-- 読み込み中表示（自動ログイン時） -->
             <div id="loading-box" style="display:none;" class="py-6">
@@ -47,7 +47,7 @@
     <div id="main-content" class="flex-1 flex-col" style="display:none;">
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-                <h1 class="text-lg font-bold" style="color: #23651C;">合奏計画ポータル</h1>
+                <h1 class="text-lg font-bold" style="color: #23651C;">HUWO2027 合奏計画</h1>
                 <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
             </div>
         </header>
@@ -75,7 +75,7 @@
         </main>
 
         <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400">
-            <p>&copy; 2027 スプコン実行委員会</p>
+            <p>&copy; HUWO2027</p>
         </footer>
     </div>
 
@@ -254,201 +254,4 @@
             const concerts = new Set();
             plans.forEach(p => {
                 const cName = p.concertName || "通常練習";
-                concerts.add(cName);
-            });
-            return Array.from(concerts);
-        }
-
-        function getFilteredPlans() {
-            return plans.filter(p => (p.concertName || "通常練習") === selectedConcert);
-        }
-
-        // 曲名さえあれば表示できるように修正した関数
-        function normalizeRow(row) {
-            if (!Array.isArray(row)) return null;
-            const 曲名 = row[1] ? String(row[1]).trim() : "";
-            if (曲名 === "") return null;
-            
-            const 開始 = formatTime(row[2]);
-            const 終了 = formatTime(row[3]);
-            
-            return {
-                枠: row[0] || "",
-                曲名,
-                開始,
-                終了,
-                時間: formatMinutes(row[2], row[3]),
-                一言目標: row[5] || "",
-                振り返り: row[6] || "",
-                取組箇所: row[7] || "",
-                次回向け: row[8] || "",
-                備考: row[9] || ""
-            };
-        }
-
-        function getAllSongsForCurrentConcert() {
-            const songs = new Set();
-            getFilteredPlans().forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n) songs.add(n.曲名);
-                });
-            });
-            return Array.from(songs);
-        }
-
-        function makeTabButton(label, isActive, onClick, customColor = '#23651C') {
-            const btn = document.createElement('button');
-            btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer';
-            if (isActive) {
-                btn.className += ' text-white shadow-sm';
-                btn.style.backgroundColor = customColor;
-            } else {
-                btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
-            }
-            btn.innerText = label;
-            btn.onclick = onClick;
-            return btn;
-        }
-
-        function renderTabs() {
-            const concertContainer = document.getElementById('concert-tabs');
-            concertContainer.innerHTML = '';
-            getAllConcerts().forEach(cName => {
-                concertContainer.appendChild(
-                    makeTabButton(cName, selectedConcert === cName, () => selectConcert(cName), '#1E3A8A')
-                );
-            });
-
-            const filteredPlans = getFilteredPlans();
-            const dateContainer = document.getElementById('date-tabs');
-            dateContainer.innerHTML = '';
-            filteredPlans.forEach(item => {
-                const d = String(item.date);
-                dateContainer.appendChild(
-                    makeTabButton(d, activeMode === 'date' && selectedTarget === d, () => selectDateTab(d))
-                );
-            });
-
-            const songContainer = document.getElementById('song-tabs');
-            songContainer.innerHTML = '';
-            getAllSongsForCurrentConcert().forEach(song => {
-                songContainer.appendChild(
-                    makeTabButton(song, activeMode === 'song' && selectedTarget === song, () => selectSongTab(song))
-                );
-            });
-        }
-
-        function selectConcert(concertName) {
-            selectedConcert = concertName;
-            const filtered = getFilteredPlans();
-            if (filtered.length > 0) {
-                activeMode = 'date';
-                selectedTarget = String(filtered[0].date);
-                selectDateTab(selectedTarget);
-            } else {
-                activeMode = 'date';
-                selectedTarget = '';
-                renderTabs();
-                document.getElementById('current-view-title').innerText = `${concertName} の予定`;
-                document.getElementById('plan-container').innerHTML = `<p class="text-sm text-slate-400 text-center py-8">この演奏会の練習予定はありません</p>`;
-            }
-        }
-
-        function selectDateTab(date) {
-            activeMode = 'date';
-            selectedTarget = date;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
-
-            const filtered = getFilteredPlans();
-            const sheet = filtered.find(p => String(p.date) === date);
-            const list = ((sheet && sheet.rows) || []).slice(2)
-                .map(normalizeRow)
-                .filter(Boolean);
-            renderCards(list, 'date');
-        }
-
-        function selectSongTab(songName) {
-            activeMode = 'song';
-            selectedTarget = songName;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定 (${selectedConcert})`;
-
-            const list = [];
-            getFilteredPlans().forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n && n.曲名 === songName) list.push({ ...n, date: String(plan.date) });
-                });
-            });
-            renderCards(list, 'song');
-        }
-
-        function detailBlock(label, value, emptyText) {
-            return `
-                <div class="bg-slate-50 p-4 rounded-xl">
-                    <span class="block text-xs font-bold text-slate-400 mb-1">${label}</span>
-                    <p class="text-base text-slate-800 whitespace-pre-wrap">${value ? escapeHtml(value) : emptyText}</p>
-                </div>`;
-        }
-
-        function renderCards(dataList, mode = 'date') {
-            const container = document.getElementById('plan-container');
-            container.innerHTML = '';
-
-            if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const dateLabel = mode === 'song'
-                    ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${escapeHtml(item.date)}</span>`
-                    : '';
-                const cardId = `card-${index}`;
-
-                container.insertAdjacentHTML('beforeend', `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${escapeHtml(item.枠)}</span>
-                                    ${dateLabel}
-                                </div>
-                                <h3 class="text-xl font-bold text-slate-900 text-left">${escapeHtml(item.曲名)}</h3>
-                            </div>
-
-                            <div class="text-base text-slate-600 mb-4 font-semibold">
-                                時間：<span class="text-slate-900">${escapeHtml(item.開始 || "--:--")} 〜 ${escapeHtml(item.終了 || "--:--")} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>詳細を開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                ${detailBlock('① 一言目標', item.一言目標, '（なし）')}
-                                ${detailBlock('② 取組箇所', item.取組箇所, '（なし）')}
-                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（なし）')}
-                                ${detailBlock('④ 次回に向けて', item.次回向け, '（なし）')}
-                                ${detailBlock('⑤ 備考', item.備考, '（なし）')}
-                            </div>
-                        </div>
-                    </div>
-                `);
-            });
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            const isClosed = content.style.display === 'none';
-            content.style.display = isClosed ? 'block' : 'none';
-            icon.innerText = isClosed ? '▲' : '▼';
-        }
-    </script>
-</body>
-</html>
+                concerts
