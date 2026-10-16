@@ -8,6 +8,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Noto Sans JP', sans-serif; }
+        /* Tailwind CDN の読み込みに失敗しても、ログインモーダルが崩れないための保険 */
+        #auth-modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(15, 23, 42, .65); z-index: 50; }
+        #auth-modal > div { background: #fff; border-radius: 1rem; max-width: 28rem; width: 100%; padding: 2rem; text-align: center; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
@@ -20,15 +23,16 @@
             </div>
             <h2 class="text-xl font-bold text-slate-900 mb-2">ログイン</h2>
 
-            <!-- 読み込み中表示（自動ログイン時） -->
+            <!-- 読み込み中表示 -->
             <div id="loading-box" style="display:none;" class="py-6">
-                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-200 border-t-[#23651C] mb-3"></div>
-                <p class="text-sm text-slate-500">データを読み込み中です…</p>
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-200 mb-3" style="border-top-color:#23651C;"></div>
+                <p class="text-sm text-slate-500">データを読み込み中です…（数秒かかることがあります）</p>
             </div>
 
             <div id="login-box">
                 <p class="text-sm text-slate-500 mb-6">IDとパスワードを入力してください。</p>
-                <form onsubmit="handleLogin(event)" class="space-y-4">
+                <!-- onsubmit="return false" : JSが壊れていてもページがリロードされない保険。実処理は下の addEventListener -->
+                <form id="login-form" onsubmit="return false;" class="space-y-4">
                     <input type="text" id="id-input" placeholder="ID" autocomplete="username"
                         class="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 text-center text-base" style="--tw-ring-color: #23651C;" required>
                     <input type="password" id="password-input" placeholder="パスワード" autocomplete="current-password"
@@ -48,12 +52,11 @@
         <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
             <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
                 <h1 class="text-lg font-bold" style="color: #23651C;">HUWO2027 合奏計画</h1>
-                <button onclick="handleLogout()" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
+                <button id="logout-btn" class="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer">ログアウト</button>
             </div>
         </header>
 
         <main class="max-w-4xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
-            <!-- 階層タブ選択エリア -->
             <div class="space-y-4 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div>
                     <span class="text-sm font-bold text-slate-500 block mb-1.5">演奏会</span>
@@ -80,125 +83,151 @@
     </div>
 
     <script>
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzssFjqZj9Onkzn43hbHwCEg2Et8O3f32Tsw-dXzDFms4na4_QX2lrZolGJoXyI3tVG/exec";
-        const SESSION_KEY = 'auth_passed_v2';
+    (function () {
+        'use strict';
+
+        /* ================= 設定 ================= */
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxng4WqS89YUapSVcuIkboqeoLq1Sm0dGl96gmWhZeda2Fxi5lbCUgLYA_9VVzPqdRZ/exec";
+        const SESSION_KEY = 'auth_token_v3';   // GASが発行した期限付きトークンを保存
         const FETCH_TIMEOUT_MS = 25000;
+        const DEFAULT_CONCERT = '通常練習';
+        const GREEN = '#23651C';
+        const NAVY = '#1E3A8A';
 
-        let plans = [];
+        /* ================= 状態 ================= */
+        let allPlans = [];           // 「ひながた」を除いた有効シート
         let selectedConcert = '';
-        let activeMode = 'date';
+        let activeMode = 'date';     // 'date' | 'song'
         let selectedTarget = '';
-        let isInitialized = false; // 無限ループ防止用フラグ
+        let appEntered = false;
 
+        /* ================= ユーティリティ ================= */
+        const $ = (id) => document.getElementById(id);
+
+        // sessionStorage が使えない環境でも例外を出さない
         const store = {
             get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
-            set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} },
-            remove(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+            set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* 無視 */ } },
+            remove(k) { try { sessionStorage.removeItem(k); } catch (e) { /* 無視 */ } }
         };
 
         function escapeHtml(val) {
-            return String(val ?? '')
+            return String(val == null ? '' : val)
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
-        function show(id, display = 'block') { document.getElementById(id).style.display = display; }
-        function hide(id) { document.getElementById(id).style.display = 'none'; }
-
-        function showError(msg) {
-            const el = document.getElementById('error-msg');
-            el.innerText = msg;
-            el.style.display = 'block';
-        }
+        function show(id, display) { $(id).style.display = display || 'block'; }
+        function hide(id) { $(id).style.display = 'none'; }
+        function showError(msg) { const el = $('error-msg'); el.textContent = msg; el.style.display = 'block'; }
         function clearError() { hide('error-msg'); }
 
+        function setLoginButtonBusy(busy) {
+            const btn = $('login-btn');
+            btn.disabled = busy;
+            btn.textContent = busy ? '確認中…' : 'ログイン';
+        }
+
+        /* ================= 時刻の整形 ================= */
         function formatTime(val) {
-            if (!val) return "";
+            if (!val) return '';
             const str = String(val).trim();
-            if (str.includes("T")) {
-                const parts = str.split("T");
-                if (parts.length > 1) {
-                    const timePart = parts[1].split(".")[0];
-                    const timeSub = timePart.split(":");
-                    if (timeSub.length >= 2) return `${timeSub[0]}:${timeSub[1]}`;
-                }
+            if (str.indexOf('T') !== -1) {
+                const timePart = (str.split('T')[1] || '').split('.')[0];
+                const sub = timePart.split(':');
+                if (sub.length >= 2) return sub[0] + ':' + sub[1];
             }
-            const match = str.match(/(\d{1,2}):(\d{2})/);
-            if (match) return `${match[1]}:${match[2]}`;
+            const m = str.match(/(\d{1,2}):(\d{2})/);
+            if (m) return m[1] + ':' + m[2];
             return str;
         }
 
-        function formatMinutes(startTimeStr, endTimeStr) {
-            if (!startTimeStr || !endTimeStr) return "";
-            try {
-                const parseToMin = (s) => {
-                    const clean = String(s).trim();
-                    if (clean.includes("T")) {
-                        const tPart = clean.split("T")[1];
-                        const tSub = tPart.split(":");
-                        if (tSub.length >= 2) return parseInt(tSub[0], 10) * 60 + parseInt(tSub[1], 10);
-                    }
-                    const m = clean.match(/(\d{1,2}):(\d{2})/);
-                    if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-                    return null;
-                };
-
-                const startMin = parseToMin(startTimeStr);
-                const endMin = parseToMin(endTimeStr);
-
-                if (startMin !== null && endMin !== null) {
-                    let diff = endMin - startMin;
-                    if (diff < 0) diff += 24 * 60;
-                    return diff > 0 ? `${diff}` : "";
-                }
-            } catch (e) {
-                console.error("Minute calculation warning:", e);
-            }
-            return "";
+        function toMinutes(val) {
+            // "09:00" でも ISO形式 "1899-12-30T09:00:00.000Z" でも最初の HH:MM を拾う
+            const m = String(val == null ? '' : val).match(/(\d{1,2}):(\d{2})/);
+            return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
         }
 
-        async function fetchServerData() {
+        function calcDuration(startVal, endVal) {
+            const s = toMinutes(startVal);
+            const e = toMinutes(endVal);
+            if (s === null || e === null) return '';
+            let diff = e - s;
+            if (diff < 0) diff += 24 * 60;
+            return diff > 0 ? String(diff) : '';
+        }
+
+        /* ================= GAS との通信 ================= */
+        // ID/パスワードの照合はすべてGAS側で行う。ブラウザには認証情報を一切渡さない。
+        // Content-Type を text/plain にするのは、GASがCORSのプリフライト(OPTIONS)に対応していないため。
+        async function callApi(payload) {
             const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+            const timer = setTimeout(function () { ctrl.abort(); }, FETCH_TIMEOUT_MS);
             try {
-                const res = await fetch(GAS_API_URL, { signal: ctrl.signal });
-                if (!res.ok) throw new Error(`HTTP_${res.status}`);
+                const res = await fetch(GAS_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload),
+                    signal: ctrl.signal
+                });
+                if (!res.ok) throw new Error('HTTP_' + res.status);
                 const data = await res.json();
-                if (!data || !data.auth || !Array.isArray(data.plans)) {
-                    throw new Error('INVALID_STRUCTURE');
-                }
+                if (!data || typeof data.ok !== 'boolean') throw new Error('INVALID_STRUCTURE');
                 return data;
+            } catch (e) {
+                if (e && e.name === 'AbortError') throw new Error('TIMEOUT');
+                throw e;
             } finally {
                 clearTimeout(timer);
             }
         }
 
+        function describeError(e) {
+            const msg = (e && e.message) || '';
+            if (msg === 'INVALID_STRUCTURE') return 'サーバーの応答形式が不正です（GAS側の設定・再デプロイをご確認ください）';
+            if (msg === 'TIMEOUT') return '応答に時間がかかっています。時間をおいて再度お試しください';
+            if (msg.indexOf('HTTP_') === 0) return 'サーバーエラーが発生しました（' + msg.replace('HTTP_', '') + '）';
+            return '通信エラーが発生しました。時間をおいて再度お試しください';
+        }
+
+        function describeApiError(code) {
+            switch (code) {
+                case 'BAD_CREDENTIALS': return 'IDまたはパスワードが正しくありません';
+                case 'NOT_CONFIGURED': return 'サーバーにIDとパスワードが設定されていません（IDPASSシートをご確認ください）';
+                case 'TOKEN_INVALID': return 'ログインの有効期限が切れました。もう一度ログインしてください';
+                default: return 'サーバー側でエラーが発生しました（' + (code || 'UNKNOWN') + '）';
+            }
+        }
+
+        /* ================= ログイン / ログアウト ================= */
         async function handleLogin(event) {
             event.preventDefault();
-            const inputId = document.getElementById('id-input').value.trim();
-            const inputPass = document.getElementById('password-input').value.trim();
-            const btn = document.getElementById('login-btn');
+            const id = $('id-input').value.trim();
+            const pass = $('password-input').value.trim();
             clearError();
-            btn.disabled = true;
-            btn.innerText = '確認中…';
+            setLoginButtonBusy(true);
 
+            let res;
             try {
-                const data = await fetchServerData();
-                btn.disabled = false;
-                btn.innerText = 'ログイン';
-
-                if (inputId === String(data.auth.id).trim() && inputPass === String(data.auth.pass).trim()) {
-                    store.set(SESSION_KEY, 'true');
-                    enterApp(data);
-                } else {
-                    showError('IDまたはパスワードが正しくありません');
-                }
+                res = await callApi({ action: 'login', id: id, pass: pass });
             } catch (e) {
-                console.error(e);
-                btn.disabled = false;
-                btn.innerText = 'ログイン';
-                showError('通信エラーが発生しました。時間をおいて再度お試しください');
+                console.error('Login failed:', e);
+                setLoginButtonBusy(false);
+                showError(describeError(e));
+                return;
             }
+            setLoginButtonBusy(false);
+
+            if (!res.ok) {
+                showError(describeApiError(res.error));
+                return;
+            }
+            if (!Array.isArray(res.plans)) {
+                showError(describeError(new Error('INVALID_STRUCTURE')));
+                return;
+            }
+            store.set(SESSION_KEY, res.token || '');
+            enterApp(res);
         }
 
         function handleLogout() {
@@ -206,53 +235,267 @@
             window.location.reload();
         }
 
-        window.addEventListener('DOMContentLoaded', async () => {
-            if (store.get(SESSION_KEY) !== 'true') return;
+        // 再訪問時：保存済みトークンでデータだけ取得（ID/パスワードは保持しない）
+        async function tryAutoLogin() {
+            const token = store.get(SESSION_KEY);
+            if (!token) return;
 
             hide('login-box');
             show('loading-box');
-            
             try {
-                const data = await fetchServerData();
-                enterApp(data);
-            } catch (e) {
-                console.warn('Auto-login failed, fallback to login screen:', e);
+                const res = await callApi({ action: 'data', token: token });
+                if (res.ok && Array.isArray(res.plans)) {
+                    enterApp(res);
+                    return;
+                }
+                // トークン無効・期限切れ
                 store.remove(SESSION_KEY);
                 hide('loading-box');
                 show('login-box');
+                showError(describeApiError(res.error));
+            } catch (e) {
+                // 通信失敗ではトークンを残す（再読み込みで再試行できる）
+                console.warn('Auto-login failed:', e);
+                hide('loading-box');
+                show('login-box');
+                showError(describeError(e));
             }
-        });
+        }
 
+        /* ================= 画面切り替え ================= */
         function enterApp(data) {
+            if (appEntered) return;
+            appEntered = true;
             hide('auth-modal');
             show('main-content', 'flex');
             try {
                 initApp(data);
             } catch (e) {
+                // 描画エラーでログイン画面には戻さない
                 console.error('Render error:', e);
-                document.getElementById('plan-container').innerHTML =
-                    `<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。再読み込みしてください。</p>`;
+                $('plan-container').innerHTML =
+                    '<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。ページを再読み込みしてください。</p>';
             }
         }
 
         function initApp(data) {
-            if (isInitialized) return; // 2重初期化・ループを完全防止
-            isInitialized = true;
+            allPlans = (data.plans || []).filter(function (p) {
+                return p && p.date != null && String(p.date) !== '' && String(p.date).indexOf('ひながた') === -1;
+            });
 
-            plans = (data.plans || []).filter(p => p && p.date && !String(p.date).includes("ひながた"));
+            if (allPlans.length === 0) {
+                $('plan-container').innerHTML =
+                    '<p class="text-sm text-slate-400 text-center py-8">有効な練習日シートが見つかりません</p>';
+                return;
+            }
+            selectConcert(getAllConcerts()[0]);
+        }
 
-            if (plans.length === 0) {
-                document.getElementById('plan-container').innerHTML =
-                    `<p class="text-sm text-slate-400 text-center py-8">有効な練習日シートが見つかりません</p>`;
+        /* ================= データ加工 ================= */
+        function concertOf(plan) { return plan.concertName ? String(plan.concertName) : DEFAULT_CONCERT; }
+
+        function getAllConcerts() {
+            const set = new Set();
+            allPlans.forEach(function (p) { set.add(concertOf(p)); });
+            return Array.from(set);
+        }
+
+        function getFilteredPlans() {
+            return allPlans.filter(function (p) { return concertOf(p) === selectedConcert; });
+        }
+
+        // シートの1行 → 共通オブジェクト（開始時刻か曲名が空なら null）
+        function normalizeRow(row) {
+            if (!Array.isArray(row)) return null;
+            const start = formatTime(row[2]);
+            const end = formatTime(row[3]);
+            const song = row[1] ? String(row[1]).trim() : '';
+            if (start === '' || song === '') return null;
+            return {
+                slot: row[0] || '',
+                song: song,
+                start: start,
+                end: end,
+                minutes: calcDuration(row[2], row[3]),
+                goal: row[5] || '',        // ① 一言目標
+                focus: row[7] || '',       // ② 取組箇所
+                review: row[6] || '',      // ③ 前回の振り返り
+                next: row[8] || '',        // ④ 次回に向けて
+                note: row[9] || ''         // ⑤ 備考
+            };
+        }
+
+        function rowsOf(plan) {
+            return (plan.rows || []).slice(2).map(normalizeRow).filter(Boolean);
+        }
+
+        function getSongsForCurrentConcert() {
+            const set = new Set();
+            getFilteredPlans().forEach(function (plan) {
+                rowsOf(plan).forEach(function (r) { set.add(r.song); });
+            });
+            return Array.from(set);
+        }
+
+        /* ================= タブ ================= */
+        function makeTabButton(label, isActive, onClick, activeColor) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition cursor-pointer shadow-xs';
+            if (isActive) {
+                btn.className += ' text-white';
+                btn.style.backgroundColor = activeColor || GREEN;
+            } else {
+                btn.className += ' bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
+            }
+            btn.textContent = label;
+            btn.addEventListener('click', onClick);
+            return btn;
+        }
+
+        function renderTabs() {
+            const concertBox = $('concert-tabs');
+            concertBox.innerHTML = '';
+            getAllConcerts().forEach(function (name) {
+                concertBox.appendChild(makeTabButton(name, name === selectedConcert, function () { selectConcert(name); }, NAVY));
+            });
+
+            const dateBox = $('date-tabs');
+            dateBox.innerHTML = '';
+            getFilteredPlans().forEach(function (plan) {
+                const d = String(plan.date);
+                dateBox.appendChild(makeTabButton(d, activeMode === 'date' && selectedTarget === d, function () { selectDateTab(d); }));
+            });
+
+            const songBox = $('song-tabs');
+            songBox.innerHTML = '';
+            getSongsForCurrentConcert().forEach(function (song) {
+                songBox.appendChild(makeTabButton(song, activeMode === 'song' && selectedTarget === song, function () { selectSongTab(song); }));
+            });
+        }
+
+        function selectConcert(name) {
+            selectedConcert = name;
+            const plans = getFilteredPlans();
+            if (plans.length > 0) {
+                selectDateTab(String(plans[0].date));
+            } else {
+                activeMode = 'date';
+                selectedTarget = '';
+                renderTabs();
+                $('current-view-title').textContent = name;
+                renderCards([], 'date');
+            }
+        }
+
+        function selectDateTab(date) {
+            activeMode = 'date';
+            selectedTarget = date;
+            renderTabs();
+            $('current-view-title').textContent = date + ' の合奏計画';
+
+            const plan = getFilteredPlans().find(function (p) { return String(p.date) === date; });
+            const list = plan ? rowsOf(plan).sort(function (a, b) { return a.start.localeCompare(b.start); }) : [];
+            renderCards(list, 'date');
+        }
+
+        function selectSongTab(song) {
+            activeMode = 'song';
+            selectedTarget = song;
+            renderTabs();
+            $('current-view-title').textContent = '「' + song + '」の練習予定';
+
+            const list = [];
+            getFilteredPlans().forEach(function (plan) {
+                rowsOf(plan).forEach(function (r) {
+                    if (r.song === song) list.push(Object.assign({ date: String(plan.date) }, r));
+                });
+            });
+            renderCards(list, 'song');
+        }
+
+        /* ================= カード描画 ================= */
+        function detailBlock(label, value, emptyText) {
+            return '' +
+                '<div class="bg-slate-50 p-4 rounded-xl">' +
+                    '<span class="block text-xs font-bold text-slate-400 mb-1">' + label + '</span>' +
+                    '<p class="text-base text-slate-800 whitespace-pre-wrap">' + (value ? escapeHtml(value) : emptyText) + '</p>' +
+                '</div>';
+        }
+
+        function renderCards(list, mode) {
+            const container = $('plan-container');
+            container.innerHTML = '';
+
+            if (list.length === 0) {
+                container.innerHTML = '<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>';
                 return;
             }
 
-            const concerts = getAllConcerts();
-            if (concerts.length > 0) {
-                selectedConcert = concerts[0];
-            }
-            selectConcert(selectedConcert);
+            const html = list.map(function (item, index) {
+                const cardId = 'card-' + index;
+                const dateLabel = mode === 'song'
+                    ? '<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color:' + GREEN + ';">' + escapeHtml(item.date) + '</span>'
+                    : '';
+                const timeText = escapeHtml(item.start) + (item.end ? ' 〜 ' + escapeHtml(item.end) : '') +
+                    (item.minutes ? ' (' + escapeHtml(item.minutes) + '分)' : '');
+
+                return '' +
+                '<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">' +
+                    '<div class="w-3 flex-shrink-0" style="background-color:' + GREEN + ';"></div>' +
+                    '<div class="flex-1 p-5 sm:p-6">' +
+                        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">' +
+                            '<div class="flex items-center space-x-2">' +
+                                '<span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">' + escapeHtml(item.slot) + '</span>' +
+                                dateLabel +
+                            '</div>' +
+                            '<h3 class="text-xl font-bold text-slate-900 text-left w-full sm:w-auto">' + escapeHtml(item.song) + '</h3>' +
+                        '</div>' +
+                        '<div class="text-base text-slate-600 mb-4 font-semibold">時間：<span class="text-slate-900">' + timeText + '</span></div>' +
+                        '<button type="button" data-toggle="' + cardId + '" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color:' + GREEN + ';">' +
+                            '<span id="' + cardId + '-icon">▼</span><span>詳細を開く / 閉じる</span>' +
+                        '</button>' +
+                        '<div id="' + cardId + '-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">' +
+                            detailBlock('① 一言目標', item.goal, '（未設定）') +
+                            detailBlock('② 取組箇所', item.focus, '（未設定）') +
+                            detailBlock('③ 前回の振り返り', item.review, '（なし）') +
+                            detailBlock('④ 次回に向けて', item.next, '（未設定）') +
+                            detailBlock('⑤ 備考', item.note, '（なし）') +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+
+            container.innerHTML = html;
         }
 
-        function getAllConcerts() {
-            const
+        // アコーディオンは親要素でまとめて処理（イベント委譲）
+        function handlePlanContainerClick(e) {
+            const btn = e.target.closest('[data-toggle]');
+            if (!btn) return;
+            const id = btn.getAttribute('data-toggle');
+            const content = $(id + '-content');
+            const icon = $(id + '-icon');
+            if (!content || !icon) return;
+            const closed = content.style.display === 'none';
+            content.style.display = closed ? 'block' : 'none';
+            icon.textContent = closed ? '▲' : '▼';
+        }
+
+        /* ================= 起動 ================= */
+        function boot() {
+            $('login-form').addEventListener('submit', handleLogin);
+            $('logout-btn').addEventListener('click', handleLogout);
+            $('plan-container').addEventListener('click', handlePlanContainerClick);
+            tryAutoLogin();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', boot);
+        } else {
+            boot();
+        }
+    })();
+    </script>
+</body>
+</html>
