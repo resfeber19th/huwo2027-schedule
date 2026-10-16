@@ -56,15 +56,15 @@
             <!-- 階層タブ選択エリア -->
             <div class="space-y-4 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div>
-                    <span class="text-sm font-bold text-slate-400 block mb-1.5">演奏会</span>
+                    <span class="text-sm font-bold text-slate-500 block mb-1.5">演奏会</span>
                     <div id="concert-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
                 </div>
                 <div>
-                    <span class="text-sm font-bold text-slate-400 block mb-1.5">練習日</span>
+                    <span class="text-sm font-bold text-slate-500 block mb-1.5">練習日</span>
                     <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
                 </div>
                 <div>
-                    <span class="text-sm font-bold text-slate-400 block mb-1.5">曲名</span>
+                    <span class="text-sm font-bold text-slate-500 block mb-1.5">曲名</span>
                     <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
                 </div>
             </div>
@@ -278,8 +278,8 @@
                 終了,
                 時間: formatMinutes(row[2], row[3]),
                 一言目標: row[5] || "",
-                取組箇所: row[7] || "",
-                振り返り: row[6] || "",
+                取組箇所: row[7] || "",      // ② 取組箇所
+                振り返り: row[6] || "",      // ③ 前回の振り返り
                 次回向け: row[8] || "",
                 備考: row[9] || ""
             };
@@ -298,12 +298,12 @@
 
         function makeTabButton(label, isActive, onClick, customColor = '#23651C') {
             const btn = document.createElement('button');
-            btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer';
+            btn.className = 'px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition cursor-pointer shadow-xs';
             if (isActive) {
-                btn.className += ' text-white shadow-sm';
+                btn.className += ' text-white';
                 btn.style.backgroundColor = customColor;
             } else {
-                btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
+                btn.className += ' bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
             }
             btn.innerText = label;
             btn.onclick = onClick;
@@ -349,106 +349,4 @@
                 activeMode = 'date';
                 selectedTarget = '';
                 renderTabs();
-                document.getElementById('current-view-title').innerText = `${concertName} の予定`;
-                document.getElementById('plan-container').innerHTML = `<p class="text-sm text-slate-400 text-center py-8">この演奏会の練習予定はありません</p>`;
-            }
-        }
-
-        function selectDateTab(date) {
-            activeMode = 'date';
-            selectedTarget = date;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
-
-            const filtered = getFilteredPlans();
-            const sheet = filtered.find(p => String(p.date) === date);
-            const list = ((sheet && sheet.rows) || []).slice(2)
-                .map(normalizeRow)
-                .filter(Boolean)
-                .sort((a, b) => a.開始.localeCompare(b.開始));
-            renderCards(list, 'date');
-        }
-
-        function selectSongTab(songName) {
-            activeMode = 'song';
-            selectedTarget = songName;
-            renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定 (${selectedConcert})`;
-
-            const list = [];
-            getFilteredPlans().forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n && n.曲名 === songName) list.push({ ...n, date: String(plan.date) });
-                });
-            });
-            renderCards(list, 'song');
-        }
-
-        function detailBlock(label, value, emptyText) {
-            return `
-                <div class="bg-slate-50 p-4 rounded-xl">
-                    <span class="block text-xs font-bold text-slate-400 mb-1">${label}</span>
-                    <p class="text-base text-slate-800 whitespace-pre-wrap">${value ? escapeHtml(value) : emptyText}</p>
-                </div>`;
-        }
-
-        function renderCards(dataList, mode = 'date') {
-            const container = document.getElementById('plan-container');
-            container.innerHTML = '';
-
-            if (dataList.length === 0) {
-                container.innerHTML = `<p class="text-sm text-slate-400 text-center py-8">予定はありません</p>`;
-                return;
-            }
-
-            dataList.forEach((item, index) => {
-                const dateLabel = mode === 'song'
-                    ? `<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color: #23651C;">${escapeHtml(item.date)}</span>`
-                    : '';
-                const cardId = `card-${index}`;
-
-                container.insertAdjacentHTML('beforeend', `
-                    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">
-                        <div class="w-3 flex-shrink-0" style="background-color: #23651C;"></div>
-                        <div class="flex-1 p-5 sm:p-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                                <div class="flex items-center space-x-2">
-                                    <span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">${escapeHtml(item.枠)}</span>
-                                    ${dateLabel}
-                                </div>
-                                <h3 class="text-xl font-bold text-slate-900 text-left">${escapeHtml(item.曲名)}</h3>
-                            </div>
-
-                            <div class="text-base text-slate-600 mb-4 font-semibold">
-                                時間：<span class="text-slate-900">${escapeHtml(item.開始)} 〜 ${escapeHtml(item.終了)} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
-                            </div>
-
-                            <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
-                                <span id="${cardId}-icon">▼</span>
-                                <span>詳細を開く / 閉じる</span>
-                            </button>
-
-                            <div id="${cardId}-content" style="display:none;" class="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                                ${detailBlock('① 一言目標', item.一言目標, '（なし）')}
-                                ${detailBlock('② 取組箇所', item.取組箇所, '（なし）')}
-                                ${detailBlock('③ 前回の振り返り', item.振り返り, '（なし）')}
-                                ${detailBlock('④ 次回に向けて', item.次回向け, '（なし）')}
-                                ${detailBlock('⑤ 備考', item.備考, '（なし）')}
-                            </div>
-                        </div>
-                    </div>
-                `);
-            });
-        }
-
-        function toggleAccordion(cardId) {
-            const content = document.getElementById(`${cardId}-content`);
-            const icon = document.getElementById(`${cardId}-icon`);
-            const isClosed = content.style.display === 'none';
-            content.style.display = isClosed ? 'block' : 'none';
-            icon.innerText = isClosed ? '▲' : '▼';
-        }
-    </script>
-</body>
-</html>
+                document.getElementById('current-view-title').innerText =
