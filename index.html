@@ -53,14 +53,19 @@
         </header>
 
         <main class="max-w-4xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
-            <div class="space-y-3">
+            <!-- 階層タブ選択エリア -->
+            <div class="space-y-4 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">練習日</span>
-                    <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
+                    <span class="text-xs font-bold text-slate-400 block mb-1.5">演奏会</span>
+                    <div id="concert-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
                 </div>
                 <div>
-                    <span class="text-xs font-bold text-slate-400 block mb-1">曲名</span>
-                    <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-2"></div>
+                    <span class="text-xs font-bold text-slate-400 block mb-1.5">練習日</span>
+                    <div id="date-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
+                </div>
+                <div>
+                    <span class="text-xs font-bold text-slate-400 block mb-1.5">曲名</span>
+                    <div id="song-tabs" class="flex overflow-x-auto space-x-2 pb-1"></div>
                 </div>
             </div>
 
@@ -75,11 +80,12 @@
     </div>
 
     <script>
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyoNd_RolzAmFpGNJCce7Ume5luybFG-6PH6dbKsFD7GYlwk9S8wuVPFsoMhu4i8aZ5/exec";
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzssFjqZj9Onkzn43hbHwCEg2Et8O3f32Tsw-dXzDFms4na4_QX2lrZolGJoXyI3tVG/exec";
         const SESSION_KEY = 'auth_passed_v2';
         const FETCH_TIMEOUT_MS = 25000;
 
         let plans = [];
+        let selectedConcert = '';
         let activeMode = 'date';
         let selectedTarget = '';
 
@@ -105,7 +111,6 @@
         }
         function clearError() { hide('error-msg'); }
 
-        // 時間フォーマット（安全なパース）
         function formatTime(val) {
             if (!val) return "";
             const str = String(val).trim();
@@ -122,22 +127,18 @@
             return str;
         }
 
-        // 開始・終了から分数を安全に計算（クラッシュ防止のtry-catch内包）
         function formatMinutes(startTimeStr, endTimeStr) {
             if (!startTimeStr || !endTimeStr) return "";
             try {
                 const parseToMin = (s) => {
                     const clean = String(s).trim();
-                    // ISO形式や日付型文字列からも時分を抽出
                     if (clean.includes("T")) {
                         const tPart = clean.split("T")[1];
                         const tSub = tPart.split(":");
                         if (tSub.length >= 2) return parseInt(tSub[0], 10) * 60 + parseInt(tSub[1], 10);
                     }
                     const m = clean.match(/(\d{1,2}):(\d{2})/);
-                    if (m) {
-                        return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-                    }
+                    if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
                     return null;
                 };
 
@@ -204,7 +205,6 @@
             window.location.reload();
         }
 
-        // 起動時の自動ログイン（ループを防ぐ安全設計）
         window.addEventListener('DOMContentLoaded', async () => {
             if (store.get(SESSION_KEY) !== 'true') return;
 
@@ -219,7 +219,6 @@
                 store.remove(SESSION_KEY);
                 hide('loading-box');
                 show('login-box');
-                // 自動ログイン失敗時はエラーメッセージを出さずスムーズにログインフォームを表示してループを完全阻止
             }
         });
 
@@ -243,7 +242,26 @@
                     `<p class="text-sm text-slate-400 text-center py-8">有効な練習日シートが見つかりません</p>`;
                 return;
             }
-            selectDateTab(String(plans[0].date));
+
+            const concerts = getAllConcerts();
+            if (concerts.length > 0) {
+                selectedConcert = concerts[0];
+            }
+            selectConcert(selectedConcert);
+        }
+
+        function getAllConcerts() {
+            const concerts = new Set();
+            plans.forEach(p => {
+                const cName = p.concertName || "通常練習";
+                concerts.add(cName);
+            });
+            return Array.from(concerts);
+        }
+
+        // 現在選択中の演奏会に属するプランのみを抽出
+        function getFilteredPlans() {
+            return plans.filter(p => (p.concertName || "通常練習") === selectedConcert);
         }
 
         function normalizeRow(row) {
@@ -267,9 +285,9 @@
             };
         }
 
-        function getAllSongs() {
+        function getAllSongsForCurrentConcert() {
             const songs = new Set();
-            plans.forEach(plan => {
+            getFilteredPlans().forEach(plan => {
                 (plan.rows || []).slice(2).forEach(row => {
                     const n = normalizeRow(row);
                     if (n) songs.add(n.曲名);
@@ -278,12 +296,12 @@
             return Array.from(songs);
         }
 
-        function makeTabButton(label, isActive, onClick) {
+        function makeTabButton(label, isActive, onClick, customColor = '#23651C') {
             const btn = document.createElement('button');
             btn.className = 'px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer';
             if (isActive) {
                 btn.className += ' text-white shadow-sm';
-                btn.style.backgroundColor = '#23651C';
+                btn.style.backgroundColor = customColor;
             } else {
                 btn.className += ' bg-white text-slate-600 hover:bg-slate-100 border border-slate-200';
             }
@@ -293,22 +311,50 @@
         }
 
         function renderTabs() {
+            // 1. 演奏会タブの描画（別カラー）
+            const concertContainer = document.getElementById('concert-tabs');
+            concertContainer.innerHTML = '';
+            getAllConcerts().forEach(cName => {
+                concertContainer.appendChild(
+                    makeTabButton(cName, selectedConcert === cName, () => selectConcert(cName), '#1E3A8A')
+                );
+            });
+
+            // 2. 練習日タブの描画（選択中の演奏会に含まれるものだけ）
+            const filteredPlans = getFilteredPlans();
             const dateContainer = document.getElementById('date-tabs');
             dateContainer.innerHTML = '';
-            plans.forEach(item => {
+            filteredPlans.forEach(item => {
                 const d = String(item.date);
                 dateContainer.appendChild(
                     makeTabButton(d, activeMode === 'date' && selectedTarget === d, () => selectDateTab(d))
                 );
             });
 
+            // 3. 曲名タブの描画（選択中の演奏会に含まれるものだけ）
             const songContainer = document.getElementById('song-tabs');
             songContainer.innerHTML = '';
-            getAllSongs().forEach(song => {
+            getAllSongsForCurrentConcert().forEach(song => {
                 songContainer.appendChild(
                     makeTabButton(song, activeMode === 'song' && selectedTarget === song, () => selectSongTab(song))
                 );
             });
+        }
+
+        function selectConcert(concertName) {
+            selectedConcert = concertName;
+            const filtered = getFilteredPlans();
+            if (filtered.length > 0) {
+                activeMode = 'date';
+                selectedTarget = String(filtered[0].date);
+                selectDateTab(selectedTarget);
+            } else {
+                activeMode = 'date';
+                selectedTarget = '';
+                renderTabs();
+                document.getElementById('current-view-title').innerText = `${concertName} の予定`;
+                document.getElementById('plan-container').innerHTML = `<p class="text-sm text-slate-400 text-center py-8">この演奏会の練習予定はありません</p>`;
+            }
         }
 
         function selectDateTab(date) {
@@ -317,7 +363,8 @@
             renderTabs();
             document.getElementById('current-view-title').innerText = `${date} の合奏計画`;
 
-            const sheet = plans.find(p => String(p.date) === date);
+            const filtered = getFilteredPlans();
+            const sheet = filtered.find(p => String(p.date) === date);
             const list = ((sheet && sheet.rows) || []).slice(2)
                 .map(normalizeRow)
                 .filter(Boolean)
@@ -329,10 +376,10 @@
             activeMode = 'song';
             selectedTarget = songName;
             renderTabs();
-            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定`;
+            document.getElementById('current-view-title').innerText = `「${songName}」の練習予定 (${selectedConcert})`;
 
             const list = [];
-            plans.forEach(plan => {
+            getFilteredPlans().forEach(plan => {
                 (plan.rows || []).slice(2).forEach(row => {
                     const n = normalizeRow(row);
                     if (n && n.曲名 === songName) list.push({ ...n, date: String(plan.date) });
