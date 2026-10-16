@@ -259,17 +259,18 @@
             return Array.from(concerts);
         }
 
-        // 現在選択中の演奏会に属するプランのみを抽出
         function getFilteredPlans() {
             return plans.filter(p => (p.concertName || "通常練習") === selectedConcert);
         }
 
+        // 曲名さえあれば表示できるように修正した関数
         function normalizeRow(row) {
             if (!Array.isArray(row)) return null;
+            const 曲名 = row[1] ? String(row[1]).trim() : "";
+            if (曲名 === "") return null;
+            
             const 開始 = formatTime(row[2]);
             const 終了 = formatTime(row[3]);
-            const 曲名 = row[1] ? String(row[1]).trim() : "";
-            if (開始 === "" || 終了 === "" || 曲名 === "") return null;
             
             return {
                 枠: row[0] || "",
@@ -311,7 +312,6 @@
         }
 
         function renderTabs() {
-            // 1. 演奏会タブの描画（別カラー）
             const concertContainer = document.getElementById('concert-tabs');
             concertContainer.innerHTML = '';
             getAllConcerts().forEach(cName => {
@@ -320,7 +320,6 @@
                 );
             });
 
-            // 2. 練習日タブの描画（選択中の演奏会に含まれるものだけ）
             const filteredPlans = getFilteredPlans();
             const dateContainer = document.getElementById('date-tabs');
             dateContainer.innerHTML = '';
@@ -331,7 +330,6 @@
                 );
             });
 
-            // 3. 曲名タブの描画（選択中の演奏会に含まれるものだけ）
             const songContainer = document.getElementById('song-tabs');
             songContainer.innerHTML = '';
             getAllSongsForCurrentConcert().forEach(song => {
@@ -367,8 +365,7 @@
             const sheet = filtered.find(p => String(p.date) === date);
             const list = ((sheet && sheet.rows) || []).slice(2)
                 .map(normalizeRow)
-                .filter(Boolean)
-                .sort((a, b) => a.開始.localeCompare(b.開始));
+                .filter(Boolean);
             renderCards(list, 'date');
         }
 
@@ -424,7 +421,7 @@
                             </div>
 
                             <div class="text-base text-slate-600 mb-4 font-semibold">
-                                時間：<span class="text-slate-900">${escapeHtml(item.開始)} 〜 ${escapeHtml(item.終了)} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
+                                時間：<span class="text-slate-900">${escapeHtml(item.開始 || "--:--")} 〜 ${escapeHtml(item.終了 || "--:--")} ${item.時間 ? `(${escapeHtml(item.時間)}分)` : ''}</span>
                             </div>
 
                             <button onclick="toggleAccordion('${cardId}')" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color: #23651C;">
