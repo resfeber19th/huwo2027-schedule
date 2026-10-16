@@ -88,6 +88,7 @@
         let selectedConcert = '';
         let activeMode = 'date';
         let selectedTarget = '';
+        let isInitialized = false; // 無限ループ防止用フラグ
 
         const store = {
             get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
@@ -235,6 +236,9 @@
         }
 
         function initApp(data) {
+            if (isInitialized) return; // 2重初期化・ループを完全防止
+            isInitialized = true;
+
             plans = (data.plans || []).filter(p => p && p.date && !String(p.date).includes("ひながた"));
 
             if (plans.length === 0) {
@@ -251,102 +255,4 @@
         }
 
         function getAllConcerts() {
-            const concerts = new Set();
-            plans.forEach(p => {
-                const cName = p.concertName || "通常練習";
-                concerts.add(cName);
-            });
-            return Array.from(concerts);
-        }
-
-        function getFilteredPlans() {
-            return plans.filter(p => (p.concertName || "通常練習") === selectedConcert);
-        }
-
-        function normalizeRow(row) {
-            if (!Array.isArray(row)) return null;
-            const 開始 = formatTime(row[2]);
-            const 終了 = formatTime(row[3]);
-            const 曲名 = row[1] ? String(row[1]).trim() : "";
-            
-            if (開始 === "" || 曲名 === "") return null;
-            
-            return {
-                枠: row[0] || "",
-                曲名,
-                開始,
-                終了,
-                時間: formatMinutes(row[2], row[3]),
-                一言目標: row[5] || "",
-                取組箇所: row[7] || "",      // ② 取組箇所
-                振り返り: row[6] || "",      // ③ 前回の振り返り
-                次回向け: row[8] || "",
-                備考: row[9] || ""
-            };
-        }
-
-        function getAllSongsForCurrentConcert() {
-            const songs = new Set();
-            getFilteredPlans().forEach(plan => {
-                (plan.rows || []).slice(2).forEach(row => {
-                    const n = normalizeRow(row);
-                    if (n) songs.add(n.曲名);
-                });
-            });
-            return Array.from(songs);
-        }
-
-        function makeTabButton(label, isActive, onClick, customColor = '#23651C') {
-            const btn = document.createElement('button');
-            btn.className = 'px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition cursor-pointer shadow-xs';
-            if (isActive) {
-                btn.className += ' text-white';
-                btn.style.backgroundColor = customColor;
-            } else {
-                btn.className += ' bg-white text-slate-700 hover:bg-slate-100 border border-slate-200';
-            }
-            btn.innerText = label;
-            btn.onclick = onClick;
-            return btn;
-        }
-
-        function renderTabs() {
-            const concertContainer = document.getElementById('concert-tabs');
-            concertContainer.innerHTML = '';
-            getAllConcerts().forEach(cName => {
-                concertContainer.appendChild(
-                    makeTabButton(cName, selectedConcert === cName, () => selectConcert(cName), '#1E3A8A')
-                );
-            });
-
-            const filteredPlans = getFilteredPlans();
-            const dateContainer = document.getElementById('date-tabs');
-            dateContainer.innerHTML = '';
-            filteredPlans.forEach(item => {
-                const d = String(item.date);
-                dateContainer.appendChild(
-                    makeTabButton(d, activeMode === 'date' && selectedTarget === d, () => selectDateTab(d))
-                );
-            });
-
-            const songContainer = document.getElementById('song-tabs');
-            songContainer.innerHTML = '';
-            getAllSongsForCurrentConcert().forEach(song => {
-                songContainer.appendChild(
-                    makeTabButton(song, activeMode === 'song' && selectedTarget === song, () => selectSongTab(song))
-                );
-            });
-        }
-
-        function selectConcert(concertName) {
-            selectedConcert = concertName;
-            const filtered = getFilteredPlans();
-            if (filtered.length > 0) {
-                activeMode = 'date';
-                selectedTarget = String(filtered[0].date);
-                selectDateTab(selectedTarget);
-            } else {
-                activeMode = 'date';
-                selectedTarget = '';
-                renderTabs();
-                document.getElementById('current-view-title').innerText =
+            const
