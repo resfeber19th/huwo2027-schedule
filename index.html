@@ -87,8 +87,9 @@
         'use strict';
 
         /* ================= 設定 ================= */
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwpxsXH7QFXrrZl0E_Gf9MWdTTnvog7_VvVEHq6lwpSwfAIKQSLJTcmfd8lT8Pahjkl/exec";
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzssFjqZj9Onkzn43hbHwCEg2Et8O3f32Tsw-dXzDFms4na4_QX2lrZolGJoXyI3tVG/exec";
         const SESSION_KEY = 'auth_token_v3';   // GASが発行した期限付きトークンを保存
+        const CACHE_KEY = 'plans_cache_v3';    // 直近の計画データ（再訪問時に即表示するため）
         const FETCH_TIMEOUT_MS = 25000;
         const DEFAULT_CONCERT = '通常練習';
         const GREEN = '#23651C';
@@ -227,34 +228,73 @@
                 return;
             }
             store.set(SESSION_KEY, res.token || '');
+            saveCache(res.plans);
             enterApp(res);
         }
 
         function handleLogout() {
             store.remove(SESSION_KEY);
+            store.remove(CACHE_KEY);
             window.location.reload();
         }
 
-        // 再訪問時：保存済みトークンでデータだけ取得（ID/パスワードは保持しない）
+        function saveCache(plans) {
+            try { store.set(CACHE_KEY, JSON.stringify(plans)); } catch (e) { /* 無視 */ }
+        }
+        function loadCache() {
+            try {
+                const raw = store.get(CACHE_KEY);
+                const plans = raw ? JSON.parse(raw) : null;
+                return Array.isArray(plans) ? plans : null;
+            } catch (e) { return null; }
+        }
+
+        // 再訪問時：保存済みトークンで自動ログイン。
+        // 前回のデータが残っていれば即表示し、最新データは裏で取得して差し替える。
         async function tryAutoLogin() {
             const token = store.get(SESSION_KEY);
-            if (!token) return;
+            if (!token) {
+                // ログイン前に GAS を起こしておく（入力中に起動待ちを終わらせる）
+                callApi({ action: 'ping' }).catch(function () { /* 無視 */ });
+                return;
+            }
+
+            const cached = loadCache();
+            if (cached) {
+                enterApp({ plans: cached });
+                try {
+                    const res = await callApi({ action: 'data', token: token });
+                    if (res.ok && Array.isArray(res.plans)) {
+                        if (JSON.stringify(res.plans) !== JSON.stringify(cached)) {
+                            saveCache(res.plans);
+                            refreshApp(res);
+                        }
+                    } else {
+                        // トークン期限切れ → ログイン画面からやり直し
+                        store.remove(SESSION_KEY);
+                        store.remove(CACHE_KEY);
+                        window.location.reload();
+                    }
+                } catch (e) {
+                    console.warn('Background refresh failed:', e);   // 古いデータのまま表示を続ける
+                }
+                return;
+            }
 
             hide('login-box');
             show('loading-box');
             try {
                 const res = await callApi({ action: 'data', token: token });
                 if (res.ok && Array.isArray(res.plans)) {
+                    saveCache(res.plans);
                     enterApp(res);
                     return;
                 }
-                // トークン無効・期限切れ
                 store.remove(SESSION_KEY);
                 hide('loading-box');
                 show('login-box');
                 showError(describeApiError(res.error));
             } catch (e) {
-                // 通信失敗ではトークンを残す（再読み込みで再試行できる）
                 console.warn('Auto-login failed:', e);
                 hide('loading-box');
                 show('login-box');
@@ -276,6 +316,21 @@
                 $('plan-container').innerHTML =
                     '<p class="text-sm text-rose-500 text-center py-8">表示中にエラーが発生しました。ページを再読み込みしてください。</p>';
             }
+        }
+
+        // バックグラウンドで取得した最新データに差し替える（今の選択タブはできるだけ維持）
+        function refreshApp(data) {
+            const prevConcert = selectedConcert, prevMode = activeMode, prevTarget = selectedTarget;
+            allPlans = (data.plans || []).filter(function (p) {
+                return p && p.date != null && String(p.date) !== '' && String(p.date).indexOf('ひながた') === -1;
+            });
+            if (allPlans.length === 0) { initApp(data); return; }
+            if (getAllConcerts().indexOf(prevConcert) === -1) { selectConcert(getAllConcerts()[0]); return; }
+            selectedConcert = prevConcert;
+            if (prevMode === 'song' && getSongsForCurrentConcert().indexOf(prevTarget) !== -1) { selectSongTab(prevTarget); return; }
+            const hasDate = getFilteredPlans().some(function (p) { return String(p.date) === prevTarget; });
+            if (prevMode === 'date' && hasDate) { selectDateTab(prevTarget); return; }
+            selectConcert(prevConcert);
         }
 
         function initApp(data) {
@@ -318,8 +373,8 @@
                 end: end,
                 minutes: calcDuration(row[2], row[3]),
                 goal: row[5] || '',        // ① 一言目標
-                focus: row[6] || '',       // ② 取組箇所
-                review: row[7] || '',      // ③ 前回の振り返り
+                focus: row[7] || '',       // ② 取組箇所
+                review: row[6] || '',      // ③ 前回の振り返り
                 next: row[8] || '',        // ④ 次回に向けて
                 note: row[9] || ''         // ⑤ 備考
             };
@@ -437,21 +492,22 @@
                 const dateLabel = mode === 'song'
                     ? '<span class="text-xs px-2 py-0.5 rounded-md font-medium text-white" style="background-color:' + GREEN + ';">' + escapeHtml(item.date) + '</span>'
                     : '';
-                const timeText = escapeHtml(item.start) + (item.end ? ' 〜 ' + escapeHtml(item.end) : '') +
-                    (item.minutes ? ' (' + escapeHtml(item.minutes) + '分)' : '');
+                // 時間（大きく・曲名の上）。「(90分)」は小さめに添える
+                const timeRange = escapeHtml(item.start) + (item.end ? ' 〜 ' + escapeHtml(item.end) : '');
+                const minutesText = item.minutes
+                    ? '<span class="ml-2 text-base font-medium text-slate-500">(' + escapeHtml(item.minutes) + '分)</span>'
+                    : '';
 
                 return '' +
                 '<div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex">' +
                     '<div class="w-3 flex-shrink-0" style="background-color:' + GREEN + ';"></div>' +
                     '<div class="flex-1 p-5 sm:p-6">' +
-                        '<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">' +
-                            '<div class="flex items-center space-x-2">' +
-                                '<span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">' + escapeHtml(item.slot) + '</span>' +
-                                dateLabel +
-                            '</div>' +
-                            '<h3 class="text-xl font-bold text-slate-900 text-left w-full sm:w-auto">' + escapeHtml(item.song) + '</h3>' +
+                        '<div class="flex items-center space-x-2 mb-2">' +
+                            '<span class="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg">' + escapeHtml(item.slot) + '</span>' +
+                            dateLabel +
                         '</div>' +
-                        '<div class="text-base text-slate-600 mb-4 font-semibold">時間：<span class="text-slate-900">' + timeText + '</span></div>' +
+                        '<div class="text-2xl font-bold text-slate-900 leading-tight">' + timeRange + minutesText + '</div>' +
+                        '<h3 class="text-lg font-bold text-slate-700 mt-1 mb-4">' + escapeHtml(item.song) + '</h3>' +
                         '<button type="button" data-toggle="' + cardId + '" class="text-sm font-bold flex items-center space-x-1 cursor-pointer transition hover:opacity-80" style="color:' + GREEN + ';">' +
                             '<span id="' + cardId + '-icon">▼</span><span>詳細を開く / 閉じる</span>' +
                         '</button>' +
