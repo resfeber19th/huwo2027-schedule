@@ -120,9 +120,9 @@
         let currentToken = '';       // ログイン中のトークン（保存に失敗してもこの画面では使える）
         let refreshing = false;
         let userName = '';                                    // ログイン中の人の名前
-        let attOptions = ['出席', '欠席', '遅刻', '早退'];     // 出欠の選択肢（GASから届いたものに置き換わる）
+        let attOptions = ['出席', '欠席/降り番', '遅刻', '早退'];     // 出欠の選択肢（GASから届いたものに置き換わる）
         const attPending = new Set();                         // 保存中の出欠（二重送信を防ぐ）
-        const ATT_COLORS = { '出席': GREEN, '欠席': '#e11d48', '遅刻': '#d97706', '早退': '#2563eb' };
+        const ATT_COLORS = { '出席': GREEN, '欠席/降り番': '#e11d48', '遅刻': '#d97706', '早退': '#2563eb' };
 
         /* ================= ユーティリティ ================= */
         const $ = (id) => document.getElementById(id);
