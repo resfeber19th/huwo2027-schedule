@@ -103,7 +103,7 @@
         'use strict';
 
         /* ================= 設定 ================= */
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzhHLYZlgjn9iklxovlUHPnG6YYLkDakjRGB8pCo0ATTR5dnsQz8E28lxvZdK8zEPZ9/exec";
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxqEQ1YuTkQv9d5ckrUuCC8PsqExrUxxGa8JgWFY2AI8AhlF_dSBFV0KTAqhwH0ClAm/exec";
         const SESSION_KEY = 'auth_token_v5';   // GASが発行した期限付きトークンを保存
         const CACHE_KEY = 'plans_cache_v5';    // 直近の計画データ（再訪問時に即表示するため）
         const FETCH_TIMEOUT_MS = 25000;
@@ -120,9 +120,10 @@
         let currentToken = '';       // ログイン中のトークン（保存に失敗してもこの画面では使える）
         let refreshing = false;
         let userName = '';                                    // ログイン中の人の名前
-        let attOptions = ['出席', '欠席/降り番', '遅刻', '早退'];     // 出欠の選択肢（GASから届いたものに置き換わる）
+        let userInstrument = '';                              // ログイン中の人の担当楽器（IDPASSシートのD列）
+        let attOptions = ['出席', '欠席', '遅刻', '早退'];     // 出欠の選択肢（GASから届いたものに置き換わる）
         const attPending = new Set();                         // 保存中の出欠（二重送信を防ぐ）
-        const ATT_COLORS = { '出席': GREEN, '欠席/降り番': '#e11d48', '遅刻': '#d97706', '早退': '#2563eb' };
+        const ATT_COLORS = { '出席': GREEN, '欠席': '#e11d48', '遅刻': '#d97706', '早退': '#2563eb' };
 
         /* ================= ユーティリティ ================= */
         const $ = (id) => document.getElementById(id);
@@ -275,7 +276,7 @@
 
         // 端末に残すのは「計画（本人の出欠入り）・名前・選択肢」。次に開いたとき即表示するために使う
         function snapshot(data) {
-            return JSON.stringify({ plans: data.plans, name: data.name || '', options: data.options || null });
+            return JSON.stringify({ plans: data.plans, name: data.name || '', instrument: data.instrument || '', options: data.options || null });
         }
         function saveCache(data) {
             try { store.set(CACHE_KEY, snapshot(data)); } catch (e) { /* 無視 */ }
@@ -363,8 +364,9 @@
         // 名前と出欠の選択肢をGASの返答から反映する
         function applyMeta(data) {
             if (typeof data.name === 'string') userName = data.name;
+            if (typeof data.instrument === 'string') userInstrument = data.instrument;
             if (Array.isArray(data.options) && data.options.length > 0) attOptions = data.options;
-            $('user-label').textContent = userName ? userName + ' さん' : '';
+            $('user-label').textContent = userName ? userName + ' さん' + (userInstrument ? '（' + userInstrument + '）' : '') : '';
         }
 
         // バックグラウンドで取得した最新データに差し替える（今の選択タブはできるだけ維持）
@@ -625,7 +627,7 @@
                     if (res.error === 'TOKEN_INVALID') { handleSessionExpired(); return; }
                     const err = new Error('API'); err.code = res.error; throw err;
                 }
-                saveCache({ plans: allPlans, name: userName, options: attOptions });
+                saveCache({ plans: allPlans, name: userName, instrument: userInstrument, options: attOptions });
                 showToast(next ? '「' + next + '」で登録しました' : '出欠の登録を取り消しました', false);
             } catch (e) {
                 setLocalAttendance(plan, row, prev);
